@@ -266,13 +266,13 @@ class DBTest : public testing::Test {
   // Return the current option configuration.
   Options CurrentOptions() {
     Options options;
-    options.reuse_logs = false;
+    options.reuseLogs = false;
     switch (option_config_) {
       case kReuse:
-        options.reuse_logs = true;
+        options.reuseLogs = true;
         break;
       case kFilter:
-        options.filter_policy = filter_policy_;
+        options.filterPolicy = filter_policy_;
         break;
       case kUncompressed:
         options.compression = kNoCompression;
@@ -592,7 +592,7 @@ TEST_F(DBTest, GetFromImmutableLayer) {
   do {
     Options options = CurrentOptions();
     options.env = env_;
-    options.write_buffer_size = 100000;  // Small write buffer
+    options.writeBufferSize = 100000;  // Small write buffer
     Reopen(&options);
 
     ASSERT_LEVELDB_OK(Put("foo", "v1"));
@@ -1025,7 +1025,7 @@ TEST_F(DBTest, RecoverDuringMemtableCompaction) {
   do {
     Options options = CurrentOptions();
     options.env = env_;
-    options.write_buffer_size = 1000000;
+    options.writeBufferSize = 1000000;
     Reopen(&options);
 
     // Trigger a long memtable compaction and reopen the database during it
@@ -1052,7 +1052,7 @@ static std::string Key(int i) {
 
 TEST_F(DBTest, MinorCompactionsHappen) {
   Options options = CurrentOptions();
-  options.write_buffer_size = 10000;
+  options.writeBufferSize = 10000;
   Reopen(&options);
 
   const int N = 500;
@@ -1089,7 +1089,7 @@ TEST_F(DBTest, RecoverWithLargeLog) {
   // Make sure that if we re-open with a small write buffer size that
   // we flush table files in the middle of a large log file.
   Options options = CurrentOptions();
-  options.write_buffer_size = 100000;
+  options.writeBufferSize = 100000;
   Reopen(&options);
   ASSERT_EQ(NumTableFilesAtLevel(0), 3);
   ASSERT_EQ(std::string(200000, '1'), Get("big1"));
@@ -1101,7 +1101,7 @@ TEST_F(DBTest, RecoverWithLargeLog) {
 
 TEST_F(DBTest, CompactionsGenerateMultipleFiles) {
   Options options = CurrentOptions();
-  options.write_buffer_size = 100000000;  // Large write buffer
+  options.writeBufferSize = 100000000;  // Large write buffer
   Reopen(&options);
 
   Random rnd(301);
@@ -1128,7 +1128,7 @@ TEST_F(DBTest, CompactionsGenerateMultipleFiles) {
 TEST_F(DBTest, RepeatedWritesToSameKey) {
   Options options = CurrentOptions();
   options.env = env_;
-  options.write_buffer_size = 100000;  // Small write buffer
+  options.writeBufferSize = 100000;  // Small write buffer
   Reopen(&options);
 
   // We must have at most one file per level except for level-0,
@@ -1136,7 +1136,7 @@ TEST_F(DBTest, RepeatedWritesToSameKey) {
   const int kMaxFiles = config::kNumLevels + config::kL0_StopWritesTrigger;
 
   Random rnd(301);
-  std::string value = RandomString(&rnd, 2 * options.write_buffer_size);
+  std::string value = RandomString(&rnd, 2 * options.writeBufferSize);
   for (int i = 0; i < 5 * kMaxFiles; i++) {
     Put("key", value);
     ASSERT_LE(TotalTableFiles(), kMaxFiles);
@@ -1197,7 +1197,7 @@ static bool Between(uint64_t val, uint64_t low, uint64_t high) {
 TEST_F(DBTest, ApproximateSizes) {
   do {
     Options options = CurrentOptions();
-    options.write_buffer_size = 100000000;  // Large write buffer
+    options.writeBufferSize = 100000000;  // Large write buffer
     options.compression = kNoCompression;
     DestroyAndReopen();
 
@@ -1218,7 +1218,7 @@ TEST_F(DBTest, ApproximateSizes) {
     // 0 because GetApproximateSizes() does not account for memtable space
     ASSERT_TRUE(Between(Size("", Key(50)), 0, 0));
 
-    if (options.reuse_logs) {
+    if (options.reuseLogs) {
       // Recovery will reuse memtable, and GetApproximateSizes() does not
       // account for memtable usage;
       Reopen(&options);
@@ -1270,7 +1270,7 @@ TEST_F(DBTest, ApproximateSizes_MixOfSmallAndLarge) {
     ASSERT_LEVELDB_OK(Put(Key(6), RandomString(&rnd, 300000)));
     ASSERT_LEVELDB_OK(Put(Key(7), RandomString(&rnd, 10000)));
 
-    if (options.reuse_logs) {
+    if (options.reuseLogs) {
       // Need to force a memtable compaction since recovery does not do so.
       ASSERT_LEVELDB_OK(dbfull()->TEST_CompactMemTable());
     }
@@ -1582,8 +1582,8 @@ TEST_F(DBTest, CustomComparator) {
   Options new_options = CurrentOptions();
   new_options.create_if_missing = true;
   new_options.comparator = &cmp;
-  new_options.filter_policy = nullptr;   // Cannot use bloom filters
-  new_options.write_buffer_size = 1000;  // Compact more often
+  new_options.filterPolicy = nullptr;   // Cannot use bloom filters
+  new_options.writeBufferSize = 1000;  // Compact more often
   DestroyAndReopen(&new_options);
   ASSERT_LEVELDB_OK(Put("[10]", "ten"));
   ASSERT_LEVELDB_OK(Put("[0x14]", "twenty"));
@@ -1761,7 +1761,7 @@ TEST_F(DBTest, NoSpace) {
 
 TEST_F(DBTest, NonWritableFileSystem) {
   Options options = CurrentOptions();
-  options.write_buffer_size = 1000;
+  options.writeBufferSize = 1000;
   options.env = env_;
   Reopen(&options);
   ASSERT_LEVELDB_OK(Put("foo", "v1"));
@@ -1899,8 +1899,8 @@ TEST_F(DBTest, BloomFilter) {
   env_->count_random_reads_ = true;
   Options options = CurrentOptions();
   options.env = env_;
-  options.block_cache = NewLRUCache(0);  // Prevent cache hits
-  options.filter_policy = NewBloomFilterPolicy(10);
+  options.blockCache = NewLRUCache(0);  // Prevent cache hits
+  options.filterPolicy = NewBloomFilterPolicy(10);
   Reopen(&options);
 
   // Populate multiple layers
@@ -1938,8 +1938,8 @@ TEST_F(DBTest, BloomFilter) {
 
   env_->delay_data_sync_.store(false, std::memory_order_release);
   Close();
-  delete options.block_cache;
-  delete options.filter_policy;
+  delete options.blockCache;
+  delete options.filterPolicy;
 }
 
 // Multi-threaded test:

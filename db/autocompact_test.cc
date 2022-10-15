@@ -15,7 +15,7 @@ class AutoCompactTest : public testing::Test {
   AutoCompactTest() {
     dbname_ = testing::TempDir() + "autocompact_test";
     tiny_cache_ = NewLRUCache(100);
-    options_.block_cache = tiny_cache_;
+    options_.blockCache = tiny_cache_;
     DestroyDB(dbname_, options_);
     options_.create_if_missing = true;
     options_.compression = kNoCompression;

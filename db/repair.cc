@@ -48,10 +48,10 @@ class Repairer {
       : dbname_(dbname),
         env_(options.env),
         icmp_(options.comparator),
-        ipolicy_(options.filter_policy),
+        ipolicy_(options.filterPolicy),
         options_(SanitizeOptions(dbname, &icmp_, &ipolicy_, options)),
-        owns_info_log_(options_.info_log != options.info_log),
-        owns_cache_(options_.block_cache != options.block_cache),
+        owns_info_log_(options_.logger != options.logger),
+        owns_cache_(options_.blockCache != options.blockCache),
         next_file_number_(1) {
     // TableCache can be small since we expect each table to be opened once.
     table_cache_ = new TableCache(dbname_, options_, 10);
@@ -60,10 +60,10 @@ class Repairer {
   ~Repairer() {
     delete table_cache_;
     if (owns_info_log_) {
-      delete options_.info_log;
+      delete options_.logger;
     }
     if (owns_cache_) {
-      delete options_.block_cache;
+      delete options_.blockCache;
     }
   }
 
@@ -79,7 +79,7 @@ class Repairer {
       for (size_t i = 0; i < tables_.size(); i++) {
         bytes += tables_[i].meta.file_size;
       }
-      Log(options_.info_log,
+      Log(options_.logger,
           "**** Repaired leveldb %s; "
           "recovered %d files; %llu bytes. "
           "Some data may have been lost. "
@@ -133,7 +133,7 @@ class Repairer {
       std::string logname = LogFileName(dbname_, logs_[i]);
       Status status = ConvertLogToTable(logs_[i]);
       if (!status.ok()) {
-        Log(options_.info_log, "Log #%llu: ignoring conversion error: %s",
+        Log(options_.logger, "Log #%llu: ignoring conversion error: %s",
             (unsigned long long)logs_[i], status.ToString().c_str());
       }
       ArchiveFile(logname);
@@ -164,7 +164,7 @@ class Repairer {
     // Create the log reader.
     LogReporter reporter;
     reporter.env = env_;
-    reporter.info_log = options_.info_log;
+    reporter.info_log = options_.logger;
     reporter.lognum = log;
     // We intentionally make log::Reader do checksumming so that
     // corruptions cause entire commits to be skipped instead of
@@ -191,7 +191,7 @@ class Repairer {
       if (status.ok()) {
         counter += WriteBatchInternal::Count(&batch);
       } else {
-        Log(options_.info_log, "Log #%llu: ignoring %s",
+        Log(options_.logger, "Log #%llu: ignoring %s",
             (unsigned long long)log, status.ToString().c_str());
         status = Status::OK();  // Keep going with rest of file
       }
@@ -212,7 +212,7 @@ class Repairer {
         table_numbers_.push_back(meta.number);
       }
     }
-    Log(options_.info_log, "Log #%llu: %d ops saved to Table #%llu %s",
+    Log(options_.logger, "Log #%llu: %d ops saved to Table #%llu %s",
         (unsigned long long)log, counter, (unsigned long long)meta.number,
         status.ToString().c_str());
     return status;
@@ -248,7 +248,7 @@ class Repairer {
     if (!status.ok()) {
       ArchiveFile(TableFileName(dbname_, number));
       ArchiveFile(SSTTableFileName(dbname_, number));
-      Log(options_.info_log, "Table #%llu: dropped: %s",
+      Log(options_.logger, "Table #%llu: dropped: %s",
           (unsigned long long)t.meta.number, status.ToString().c_str());
       return;
     }
@@ -262,7 +262,7 @@ class Repairer {
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
       Slice key = iter->key();
       if (!ParseInternalKey(key, &parsed)) {
-        Log(options_.info_log, "Table #%llu: unparsable key %s",
+        Log(options_.logger, "Table #%llu: unparsable key %s",
             (unsigned long long)t.meta.number, EscapeString(key).c_str());
         continue;
       }
@@ -281,7 +281,7 @@ class Repairer {
       status = iter->status();
     }
     delete iter;
-    Log(options_.info_log, "Table #%llu: %d entries %s",
+    Log(options_.logger, "Table #%llu: %d entries %s",
         (unsigned long long)t.meta.number, counter, status.ToString().c_str());
 
     if (status.ok()) {
@@ -335,7 +335,7 @@ class Repairer {
       std::string orig = TableFileName(dbname_, t.meta.number);
       s = env_->RenameFile(copy, orig);
       if (s.ok()) {
-        Log(options_.info_log, "Table #%llu: %d entries repaired",
+        Log(options_.logger, "Table #%llu: %d entries repaired",
             (unsigned long long)t.meta.number, counter);
         tables_.push_back(t);
       }
@@ -421,7 +421,7 @@ class Repairer {
     new_file.append("/");
     new_file.append((slash == nullptr) ? fname.c_str() : slash + 1);
     Status s = env_->RenameFile(fname, new_file);
-    Log(options_.info_log, "Archiving %s: %s\n", fname.c_str(),
+    Log(options_.logger, "Archiving %s: %s\n", fname.c_str(),
         s.ToString().c_str());
   }
 

@@ -69,7 +69,7 @@ Status Table::Open(const Options& options, RandomAccessFile* file,
     rep->file = file;
     rep->metaindex_handle = footer.metaindex_handle();
     rep->index_block = index_block;
-    rep->cache_id = (options.block_cache ? options.block_cache->NewId() : 0);
+    rep->cache_id = (options.blockCache ? options.blockCache->NewId() : 0);
     rep->filter_data = nullptr;
     rep->filter = nullptr;
     *table = new Table(rep);
@@ -80,7 +80,7 @@ Status Table::Open(const Options& options, RandomAccessFile* file,
 }
 
 void Table::ReadMeta(const Footer& footer) {
-  if (rep_->options.filter_policy == nullptr) {
+  if (rep_->options.filterPolicy == nullptr) {
     return;  // Do not need any metadata
   }
 
@@ -99,7 +99,7 @@ void Table::ReadMeta(const Footer& footer) {
 
   Iterator* iter = meta->NewIterator(BytewiseComparator());
   std::string key = "filter.";
-  key.append(rep_->options.filter_policy->Name());
+  key.append(rep_->options.filterPolicy->Name());
   iter->Seek(key);
   if (iter->Valid() && iter->key() == Slice(key)) {
     ReadFilter(iter->value());
@@ -128,7 +128,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
   if (block.heap_allocated) {
     rep_->filter_data = block.data.data();  // Will need to delete later
   }
-  rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
+  rep_->filter = new FilterBlockReader(rep_->options.filterPolicy, block.data);
 }
 
 Table::~Table() { delete rep_; }
@@ -153,7 +153,7 @@ static void ReleaseBlock(void* arg, void* h) {
 Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
                              const Slice& index_value) {
   Table* table = reinterpret_cast<Table*>(arg);
-  Cache* block_cache = table->rep_->options.block_cache;
+  Cache* block_cache = table->rep_->options.blockCache;
   Block* block = nullptr;
   Cache::Handle* cache_handle = nullptr;
 

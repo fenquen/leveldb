@@ -53,7 +53,7 @@ class RecoveryTest : public testing::Test {
     if (options != nullptr) {
       opts = *options;
     } else {
-      opts.reuse_logs = true;  // TODO(sanjay): test both ways
+      opts.reuseLogs = true;  // TODO(sanjay): test both ways
       opts.create_if_missing = true;
     }
     if (opts.env == nullptr) {
@@ -263,8 +263,8 @@ TEST_F(RecoveryTest, MultipleMemTables) {
 
   // Force creation of multiple memtables by reducing the write buffer size.
   Options opt;
-  opt.reuse_logs = true;
-  opt.write_buffer_size = (kNum * 100) / 2;
+  opt.reuseLogs = true;
+  opt.writeBufferSize = (kNum * 100) / 2;
   Open(&opt);
   ASSERT_LE(2, NumTables());
   ASSERT_EQ(1, NumLogs());

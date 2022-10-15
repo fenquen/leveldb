@@ -338,19 +338,19 @@ options.compression = leveldb::kNoCompression;
 ### Cache
 
 The contents of the database are stored in a set of files in the filesystem and
-each file stores a sequence of compressed blocks. If options.block_cache is
+each file stores a sequence of compressed blocks. If options.blockCache is
 non-NULL, it is used to cache frequently used uncompressed block contents.
 
 ```c++
 #include "leveldb/cache.h"
 
 leveldb::Options options;
-options.block_cache = leveldb::NewLRUCache(100 * 1048576);  // 100MB cache
+options.blockCache = leveldb::NewLRUCache(100 * 1048576);  // 100MB cache
 leveldb::DB* db;
 leveldb::DB::Open(options, name, &db);
 ... use the db ...
 delete db
-delete options.block_cache;
+delete options.blockCache;
 ```
 
 Note that the cache holds uncompressed data, and therefore it should be sized
@@ -397,12 +397,12 @@ used to reduce the number of disk reads substantially.
 
 ```c++
 leveldb::Options options;
-options.filter_policy = NewBloomFilterPolicy(10);
+options.filterPolicy = NewBloomFilterPolicy(10);
 leveldb::DB* db;
 leveldb::DB::Open(options, "/tmp/testdb", &db);
 ... use the database ...
 delete db;
-delete options.filter_policy;
+delete options.filterPolicy;
 ```
 
 The preceding code associates a Bloom filter based filtering policy with the
@@ -445,7 +445,7 @@ class CustomFilterPolicy : public leveldb::FilterPolicy {
 
 Advanced applications may provide a filter policy that does not use a bloom
 filter but uses some other mechanism for summarizing a set of keys. See
-`leveldb/filter_policy.h` for detail.
+`leveldb/filterPolicy.h` for detail.
 
 ## Checksums
 

@@ -378,10 +378,10 @@ class FaultInjectionTest : public testing::Test {
         db_(nullptr) {
     dbname_ = testing::TempDir() + "fault_test";
     DestroyDB(dbname_, Options());  // Destroy any db from earlier run
-    options_.reuse_logs = true;
+    options_.reuseLogs = true;
     options_.env = env_;
     options_.paranoid_checks = true;
-    options_.block_cache = tiny_cache_;
+    options_.blockCache = tiny_cache_;
     options_.create_if_missing = true;
   }
 
@@ -392,7 +392,7 @@ class FaultInjectionTest : public testing::Test {
     delete env_;
   }
 
-  void ReuseLogs(bool reuse) { options_.reuse_logs = reuse; }
+  void ReuseLogs(bool reuse) { options_.reuseLogs = reuse; }
 
   void Build(int start_idx, int num_vals) {
     std::string key_space, value_space;

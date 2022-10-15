@@ -27,7 +27,7 @@ class CorruptionTest : public testing::Test {
         dbname_("/memenv/corruption_test"),
         tiny_cache_(NewLRUCache(100)) {
     options_.env = &env_;
-    options_.block_cache = tiny_cache_;
+    options_.blockCache = tiny_cache_;
     DestroyDB(dbname_, options_);
 
     options_.create_if_missing = true;
@@ -210,7 +210,7 @@ TEST_F(CorruptionTest, RecoverWriteError) {
 TEST_F(CorruptionTest, NewFileErrorDuringWrite) {
   // Do enough writing to force minor compaction
   env_.writable_file_error_ = true;
-  const int num = 3 + (Options().write_buffer_size / kValueSize);
+  const int num = 3 + (Options().writeBufferSize / kValueSize);
   std::string value_storage;
   Status s;
   for (int i = 0; s.ok() && i < num; i++) {
@@ -236,7 +236,7 @@ TEST_F(CorruptionTest, TableFile) {
 }
 
 TEST_F(CorruptionTest, TableFileRepair) {
-  options_.block_size = 2 * kValueSize;  // Limit scope of corruption
+  options_.blockSize = 2 * kValueSize;  // Limit scope of corruption
   options_.paranoid_checks = true;
   Reopen();
   Build(100);
@@ -323,7 +323,7 @@ TEST_F(CorruptionTest, CompactionInputError) {
 
 TEST_F(CorruptionTest, CompactionInputErrorParanoid) {
   options_.paranoid_checks = true;
-  options_.write_buffer_size = 512 << 10;
+  options_.writeBufferSize = 512 << 10;
   Reopen();
   DBImpl* dbi = reinterpret_cast<DBImpl*>(db_);
 

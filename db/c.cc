@@ -379,7 +379,7 @@ void leveldb_options_set_comparator(leveldb_options_t* opt,
 
 void leveldb_options_set_filter_policy(leveldb_options_t* opt,
                                        leveldb_filterpolicy_t* policy) {
-  opt->rep.filter_policy = policy;
+  opt->rep.filterPolicy = policy;
 }
 
 void leveldb_options_set_create_if_missing(leveldb_options_t* opt, uint8_t v) {
@@ -399,31 +399,31 @@ void leveldb_options_set_env(leveldb_options_t* opt, leveldb_env_t* env) {
 }
 
 void leveldb_options_set_info_log(leveldb_options_t* opt, leveldb_logger_t* l) {
-  opt->rep.info_log = (l ? l->rep : nullptr);
+  opt->rep.logger = (l ? l->rep : nullptr);
 }
 
 void leveldb_options_set_write_buffer_size(leveldb_options_t* opt, size_t s) {
-  opt->rep.write_buffer_size = s;
+  opt->rep.writeBufferSize = s;
 }
 
 void leveldb_options_set_max_open_files(leveldb_options_t* opt, int n) {
-  opt->rep.max_open_files = n;
+  opt->rep.maxOpenFiles = n;
 }
 
 void leveldb_options_set_cache(leveldb_options_t* opt, leveldb_cache_t* c) {
-  opt->rep.block_cache = c->rep;
+  opt->rep.blockCache = c->rep;
 }
 
 void leveldb_options_set_block_size(leveldb_options_t* opt, size_t s) {
-  opt->rep.block_size = s;
+  opt->rep.blockSize = s;
 }
 
 void leveldb_options_set_block_restart_interval(leveldb_options_t* opt, int n) {
-  opt->rep.block_restart_interval = n;
+  opt->rep.blockRestartInterval = n;
 }
 
 void leveldb_options_set_max_file_size(leveldb_options_t* opt, size_t s) {
-  opt->rep.max_file_size = s;
+  opt->rep.maxFileSize = s;
 }
 
 void leveldb_options_set_compression(leveldb_options_t* opt, int t) {

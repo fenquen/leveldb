@@ -28,11 +28,11 @@ struct TableBuilder::Rep {
         index_block(&index_block_options),
         num_entries(0),
         closed(false),
-        filter_block(opt.filter_policy == nullptr
+        filter_block(opt.filterPolicy == nullptr
                          ? nullptr
-                         : new FilterBlockBuilder(opt.filter_policy)),
+                         : new FilterBlockBuilder(opt.filterPolicy)),
         pending_index_entry(false) {
-    index_block_options.block_restart_interval = 1;
+    index_block_options.blockRestartInterval = 1;
   }
 
   Options options;
@@ -87,7 +87,7 @@ Status TableBuilder::ChangeOptions(const Options& options) {
   // will automatically pick up the updated options.
   rep_->options = options;
   rep_->index_block_options = options;
-  rep_->index_block_options.block_restart_interval = 1;
+  rep_->index_block_options.blockRestartInterval = 1;
   return Status::OK();
 }
 
@@ -117,7 +117,7 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
   r->data_block.Add(key, value);
 
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
-  if (estimated_block_size >= r->options.block_size) {
+  if (estimated_block_size >= r->options.blockSize) {
     Flush();
   }
 }
@@ -215,7 +215,7 @@ Status TableBuilder::Finish() {
     if (r->filter_block != nullptr) {
       // Add mapping from "filter.Name" to location of filter data
       std::string key = "filter.";
-      key.append(r->options.filter_policy->Name());
+      key.append(r->options.filterPolicy->Name());
       std::string handle_encoding;
       filter_block_handle.EncodeTo(&handle_encoding);
       meta_index_block.Add(key, handle_encoding);

@@ -361,7 +361,7 @@ class DBConstructor : public Constructor {
 
     options.create_if_missing = true;
     options.error_if_exists = true;
-    options.write_buffer_size = 10000;  // Something small to force merging
+    options.writeBufferSize = 10000;  // Something small to force merging
     status = DB::Open(options, name, &db_);
     ASSERT_TRUE(status.ok()) << status.ToString();
   }
@@ -412,10 +412,10 @@ class Harness : public testing::Test {
     constructor_ = nullptr;
     options_ = Options();
 
-    options_.block_restart_interval = args.restart_interval;
+    options_.blockRestartInterval = args.restart_interval;
     // Use shorter block size for tests to exercise block boundary
     // conditions more.
-    options_.block_size = 256;
+    options_.blockSize = 256;
     if (args.reverse_compare) {
       options_.comparator = &reverse_key_comparator;
     }
@@ -767,7 +767,7 @@ TEST(TableTest, ApproximateOffsetOfPlain) {
   std::vector<std::string> keys;
   KVMap kvmap;
   Options options;
-  options.block_size = 1024;
+  options.blockSize = 1024;
   options.compression = kNoCompression;
   c.Finish(options, &keys, &kvmap);
 
@@ -806,7 +806,7 @@ TEST(TableTest, ApproximateOffsetOfCompressed) {
   std::vector<std::string> keys;
   KVMap kvmap;
   Options options;
-  options.block_size = 1024;
+  options.blockSize = 1024;
   options.compression = kSnappyCompression;
   c.Finish(options, &keys, &kvmap);
 
