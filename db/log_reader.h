@@ -48,12 +48,12 @@ class Reader {
 
   ~Reader();
 
-  // Read the next record into *record.  Returns true if read
+  // Read the next dest into *dest.  Returns true if read
   // successfully, false if we hit end of the input.  May use
-  // "*scratch" as temporary storage.  The contents filled in *record
+  // "*scratch" as temporary storage.  The contents filled in *dest
   // will only be valid until the next mutating operation on this
   // reader or the next mutation to *scratch.
-  bool ReadRecord(Slice* record, std::string* scratch);
+  bool ReadRecord(Slice* dest, std::string* scratch);
 
   // Returns the physical offset of the last record returned by ReadRecord.
   //
@@ -78,7 +78,7 @@ class Reader {
   bool SkipToInitialBlock();
 
   // Return type, or one of the preceding special values
-  unsigned int ReadPhysicalRecord(Slice* result);
+  unsigned int ReadPhysicalRecord(Slice* dest);
 
   // Reports dropped bytes to the reporter.
   // buffer_ must be updated to remove the dropped bytes prior to invocation.
@@ -88,7 +88,7 @@ class Reader {
   SequentialFile* const file_;
   Reporter* const reporter_;
   bool const checksum_;
-  char* const backing_store_;
+  char* const backing_store_; // char[kBlockSize]
   Slice buffer_;
   bool eof_;  // Last Read() indicated EOF by returning < kBlockSize
 

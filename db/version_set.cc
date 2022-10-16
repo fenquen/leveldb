@@ -231,15 +231,15 @@ namespace leveldb {
     Iterator *Version::NewConcatenatingIterator(const ReadOptions &options,
                                                 int level) const {
         return NewTwoLevelIterator(
-                new LevelFileNumIterator(vset_->icmp_, &files_[level]), &GetFileIterator,
-                vset_->table_cache_, options);
+                new LevelFileNumIterator(versionSet->icmp_, &files_[level]), &GetFileIterator,
+                versionSet->table_cache_, options);
     }
 
     void Version::AddIterators(const ReadOptions &options,
                                std::vector<Iterator *> *iters) {
         // Merge all level zero files together since they may overlap
         for (size_t i = 0; i < files_[0].size(); i++) {
-            iters->push_back(vset_->table_cache_->NewIterator(
+            iters->push_back(versionSet->table_cache_->NewIterator(
                     options, files_[0][i]->number, files_[0][i]->file_size));
         }
 
@@ -289,7 +289,7 @@ namespace leveldb {
 
     void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void *arg,
                                      bool (*func)(void *, int, FileMetaData *)) {
-        const Comparator *ucmp = vset_->icmp_.user_comparator();
+        const Comparator *ucmp = versionSet->icmp_.user_comparator();
 
         // Search level-0 in order from newest to oldest.
         std::vector<FileMetaData *> tmp;
@@ -316,7 +316,7 @@ namespace leveldb {
             if (num_files == 0) continue;
 
             // Binary search to find earliest index whose largest key >= internal_key.
-            uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
+            uint32_t index = FindFile(versionSet->icmp_, files_[level], internal_key);
             if (index < num_files) {
                 FileMetaData *f = files_[level][index];
                 if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
@@ -396,10 +396,10 @@ namespace leveldb {
 
         state.options = &options;
         state.ikey = k.internal_key();
-        state.vset = vset_;
+        state.vset = versionSet;
 
         state.saver.state = kNotFound;
-        state.saver.ucmp = vset_->icmp_.user_comparator();
+        state.saver.ucmp = versionSet->icmp_.user_comparator();
         state.saver.user_key = k.user_key();
         state.saver.value = value;
 
@@ -462,7 +462,7 @@ namespace leveldb {
     void Version::Ref() { ++refs_; }
 
     void Version::Unref() {
-        assert(this != &vset_->dummy_versions_);
+        assert(this != &versionSet->dummy_versions_);
         assert(refs_ >= 1);
         --refs_;
         if (refs_ == 0) {
@@ -472,7 +472,7 @@ namespace leveldb {
 
     bool Version::OverlapInLevel(int level, const Slice *smallest_user_key,
                                  const Slice *largest_user_key) {
-        return SomeFileOverlapsRange(vset_->icmp_, (level > 0), files_[level],
+        return SomeFileOverlapsRange(versionSet->icmp_, (level > 0), files_[level],
                                      smallest_user_key, largest_user_key);
     }
 
@@ -493,7 +493,7 @@ namespace leveldb {
                     // Check that file does not overlap too many grandparent bytes.
                     GetOverlappingInputs(level + 2, &start, &limit, &overlaps);
                     const int64_t sum = TotalFileSize(overlaps);
-                    if (sum > MaxGrandParentOverlapBytes(vset_->options_)) {
+                    if (sum > MaxGrandParentOverlapBytes(versionSet->options_)) {
                         break;
                     }
                 }
@@ -517,7 +517,7 @@ namespace leveldb {
         if (end != nullptr) {
             user_end = end->user_key();
         }
-        const Comparator *user_cmp = vset_->icmp_.user_comparator();
+        const Comparator *user_cmp = versionSet->icmp_.user_comparator();
         for (size_t i = 0; i < files_[level].size();) {
             FileMetaData *f = files_[level][i++];
             const Slice file_start = f->smallest.user_key();
@@ -603,8 +603,8 @@ namespace leveldb {
         LevelState levels_[config::kNumLevels];
 
     public:
-        // Initialize a builder with the files from *base and other info from *vset
-        Builder(VersionSet *vset, Version *base) : vset_(vset), base_(base) {
+        // Initialize a builder with the files from *base and other info from *versionSet
+        Builder(VersionSet *versionSet, Version *base) : vset_(versionSet), base_(base) {
             base_->Ref();
             BySmallestKey cmp;
             cmp.internal_comparator = &vset_->icmp_;
@@ -739,23 +739,23 @@ namespace leveldb {
         }
     };
 
-    VersionSet::VersionSet(const std::string &dbname, const Options *options,
+    VersionSet::VersionSet(std::string dbname,
+                           const Options *options,
                            TableCache *table_cache,
-                           const InternalKeyComparator *cmp)
-            : env_(options->env),
-              dbname_(dbname),
-              options_(options),
-              table_cache_(table_cache),
-              icmp_(*cmp),
-              next_file_number_(2),
-              manifest_file_number_(0),  // Filled by Recover()
-              last_sequence_(0),
-              log_number_(0),
-              prev_log_number_(0),
-              descriptor_file_(nullptr),
-              descriptor_log_(nullptr),
-              dummy_versions_(this),
-              current_(nullptr) {
+                           const InternalKeyComparator *cmp) : env_(options->env),
+                                                               dbname_(std::move(dbname)),
+                                                               options_(options),
+                                                               table_cache_(table_cache),
+                                                               icmp_(*cmp),
+                                                               next_file_number_(2),
+                                                               manifest_file_number_(0),  // Filled by Recover()
+                                                               last_sequence_(0),
+                                                               log_number_(0),
+                                                               prev_log_number_(0),
+                                                               descriptor_file_(nullptr),
+                                                               descriptor_log_(nullptr),
+                                                               dummy_versions_(this),
+                                                               current_(nullptr) {
         AppendVersion(new Version(this));
     }
 
@@ -856,6 +856,7 @@ namespace leveldb {
             prev_log_number_ = edit->prev_log_number_;
         } else {
             delete v;
+
             if (!new_manifest_file.empty()) {
                 delete descriptor_log_;
                 delete descriptor_file_;
@@ -870,136 +871,155 @@ namespace leveldb {
 
     Status VersionSet::Recover(bool *save_manifest) {
         struct LogReporter : public log::Reader::Reporter {
-            Status *status;
+            Status *status0;
 
             void Corruption(size_t bytes, const Status &s) override {
-                if (this->status->ok()) *this->status = s;
+                if (this->status0->ok()) {
+                    *this->status0 = s;
+                }
             }
         };
 
-        // Read "CURRENT" file, which contains a pointer to the current manifest file
-        std::string current;
-        Status s = ReadFileToString(env_, CurrentFileName(dbname_), &current);
-        if (!s.ok()) {
-            return s;
+        // 读取 "CURRENT" sequentialFileManifest, which contains 之前 SetCurrentFile() 写入的当前使用的 manifest file的名字
+        std::string currentFileContentStr;
+        Status status = ReadFileToString(env_,
+                                         CurrentFileName(dbname_),
+                                         &currentFileContentStr);
+        if (!status.ok()) {
+            return status;
         }
-        if (current.empty() || current[current.size() - 1] != '\n') {
-            return Status::Corruption("CURRENT file does not end with newline");
-        }
-        current.resize(current.size() - 1);
 
-        std::string dscname = dbname_ + "/" + current;
-        SequentialFile *file;
-        s = env_->NewSequentialFile(dscname, &file);
-        if (!s.ok()) {
-            if (s.IsNotFound()) {
-                return Status::Corruption("CURRENT points to a non-existent file",
-                                          s.ToString());
+        // SetCurrentFile() 写入的当前用的 manifest 的名字 会以\n收尾
+        if (currentFileContentStr.empty() || currentFileContentStr[currentFileContentStr.size() - 1] != '\n') {
+            return Status::Corruption("CURRENT sequentialFileManifest does not end with newline");
+        }
+
+        // MANIFEST-number
+        currentFileContentStr.resize(currentFileContentStr.size() - 1);
+
+        std::string manifestFilePath = dbname_ + "/" + currentFileContentStr;
+
+        SequentialFile *sequentialFileManifest;
+        status = env_->NewSequentialFile(manifestFilePath, &sequentialFileManifest);
+        if (!status.ok()) {
+            if (status.IsNotFound()) {
+                return Status::Corruption("CURRENT points to a non-existent manifest file", status.ToString());
             }
-            return s;
+
+            return status;
         }
 
-        bool have_log_number = false;
-        bool have_prev_log_number = false;
-        bool have_next_file = false;
-        bool have_last_sequence = false;
-        uint64_t next_file = 0;
-        uint64_t last_sequence = 0;
-        uint64_t log_number = 0;
-        uint64_t prev_log_number = 0;
+        bool haveLogNumber = false;
+        bool havePrevLogNumber = false;
+        bool haveNextFile = false;
+        bool haveLastSequence = false;
+        uint64_t nextFileNumber = 0;
+        uint64_t lastSequence = 0;
+        uint64_t logNumber = 0;
+        uint64_t prevLogNumber = 0;
         Builder builder(this, current_);
-        int read_records = 0;
+        int readRecordCount = 0;
 
+
+
+
+        // 读取 manifest
         {
-            LogReporter reporter;
-            reporter.status = &s;
-            log::Reader reader(file, &reporter, true /*checksum*/,
+            LogReporter logReporter;
+            logReporter.status0 = &status;
+
+            log::Reader reader(sequentialFileManifest,
+                               &logReporter,
+                               true,
                                0 /*initial_offset*/);
-            Slice record;
+            Slice dest;
             std::string scratch;
-            while (reader.ReadRecord(&record, &scratch) && s.ok()) {
-                ++read_records;
-                VersionEdit edit;
-                s = edit.DecodeFrom(record);
-                if (s.ok()) {
-                    if (edit.has_comparator_ &&
-                        edit.comparator_ != icmp_.user_comparator()->Name()) {
-                        s = Status::InvalidArgument(
-                                edit.comparator_ + " does not match existing comparator ",
+            while (reader.ReadRecord(&dest, &scratch) && status.ok()) {
+                ++readRecordCount;
+
+                VersionEdit versionEdit;
+                status = versionEdit.DecodeFrom(dest);
+                if (status.ok()) {
+                    if (versionEdit.has_comparator_ &&
+                        versionEdit.comparator_ != icmp_.user_comparator()->Name()) {
+                        status = Status::InvalidArgument(
+                                versionEdit.comparator_ + " does not match existing comparator ",
                                 icmp_.user_comparator()->Name());
                     }
                 }
 
-                if (s.ok()) {
-                    builder.Apply(&edit);
+                if (status.ok()) {
+                    builder.Apply(&versionEdit);
                 }
 
-                if (edit.has_log_number_) {
-                    log_number = edit.log_number_;
-                    have_log_number = true;
+                if (versionEdit.has_log_number_) {
+                    logNumber = versionEdit.log_number_;
+                    haveLogNumber = true;
                 }
 
-                if (edit.has_prev_log_number_) {
-                    prev_log_number = edit.prev_log_number_;
-                    have_prev_log_number = true;
+                if (versionEdit.has_prev_log_number_) {
+                    prevLogNumber = versionEdit.prev_log_number_;
+                    havePrevLogNumber = true;
                 }
 
-                if (edit.has_next_file_number_) {
-                    next_file = edit.next_file_number_;
-                    have_next_file = true;
+                if (versionEdit.has_next_file_number_) {
+                    nextFileNumber = versionEdit.next_file_number_;
+                    haveNextFile = true;
                 }
 
-                if (edit.has_last_sequence_) {
-                    last_sequence = edit.last_sequence_;
-                    have_last_sequence = true;
+                if (versionEdit.has_last_sequence_) {
+                    lastSequence = versionEdit.last_sequence_;
+                    haveLastSequence = true;
                 }
             }
         }
-        delete file;
-        file = nullptr;
+        delete sequentialFileManifest;
+        sequentialFileManifest = nullptr;
 
-        if (s.ok()) {
-            if (!have_next_file) {
-                s = Status::Corruption("no meta-nextfile entry in descriptor");
-            } else if (!have_log_number) {
-                s = Status::Corruption("no meta-lognumber entry in descriptor");
-            } else if (!have_last_sequence) {
-                s = Status::Corruption("no last-sequence-number entry in descriptor");
+        if (status.ok()) {
+            if (!haveNextFile) {
+                status = Status::Corruption("no meta-nextfile entry in descriptor");
+            } else if (!haveLogNumber) {
+                status = Status::Corruption("no meta-lognumber entry in descriptor");
+            } else if (!haveLastSequence) {
+                status = Status::Corruption("no last-sequence-number entry in descriptor");
             }
 
-            if (!have_prev_log_number) {
-                prev_log_number = 0;
+            if (!havePrevLogNumber) {
+                prevLogNumber = 0;
             }
 
-            MarkFileNumberUsed(prev_log_number);
-            MarkFileNumberUsed(log_number);
+            MarkFileNumberUsed(prevLogNumber);
+            MarkFileNumberUsed(logNumber);
         }
 
-        if (s.ok()) {
-            Version *v = new Version(this);
-            builder.SaveTo(v);
+        if (status.ok()) {
+            Version *version = new Version(this);
+            builder.SaveTo(version);
             // Install recovered version
-            Finalize(v);
-            AppendVersion(v);
-            manifest_file_number_ = next_file;
-            next_file_number_ = next_file + 1;
-            last_sequence_ = last_sequence;
-            log_number_ = log_number;
-            prev_log_number_ = prev_log_number;
+            Finalize(version);
+            AppendVersion(version);
 
-            // See if we can reuse the existing MANIFEST file.
-            if (ReuseManifest(dscname, current)) {
+            manifest_file_number_ = nextFileNumber;
+            next_file_number_ = nextFileNumber + 1;
+            last_sequence_ = lastSequence;
+            log_number_ = logNumber;
+            prev_log_number_ = prevLogNumber;
+
+            // See if we can reuse the existing MANIFEST sequentialFileManifest.
+            if (ReuseManifest(manifestFilePath, currentFileContentStr)) {
                 // No need to save new manifest
             } else {
                 *save_manifest = true;
             }
         } else {
-            std::string error = s.ToString();
-            Log(options_->logger, "Error recovering version set with %d records: %s",
-                read_records, error.c_str());
+            std::string error = status.ToString();
+            Log(options_->logger,
+                "Error recovering version set with %d records: %status",
+                readRecordCount, error.c_str());
         }
 
-        return s;
+        return status;
     }
 
     bool VersionSet::ReuseManifest(const std::string &dscname,
@@ -1506,7 +1526,7 @@ namespace leveldb {
     }
 
     bool Compaction::IsTrivialMove() const {
-        const VersionSet *vset = input_version_->vset_;
+        const VersionSet *vset = input_version_->versionSet;
         // Avoid a move if there is lots of overlapping grandparent data.
         // Otherwise, the move could create a parent file that will require
         // a very expensive merge later on.
@@ -1525,7 +1545,7 @@ namespace leveldb {
 
     bool Compaction::IsBaseLevelForKey(const Slice &user_key) {
         // Maybe use binary search to find right entry instead of linear search?
-        const Comparator *user_cmp = input_version_->vset_->icmp_.user_comparator();
+        const Comparator *user_cmp = input_version_->versionSet->icmp_.user_comparator();
         for (int lvl = level_ + 2; lvl < config::kNumLevels; lvl++) {
             const std::vector<FileMetaData *> &files = input_version_->files_[lvl];
             while (level_ptrs_[lvl] < files.size()) {
@@ -1545,7 +1565,7 @@ namespace leveldb {
     }
 
     bool Compaction::ShouldStopBefore(const Slice &internal_key) {
-        const VersionSet *vset = input_version_->vset_;
+        const VersionSet *vset = input_version_->versionSet;
         // Scan to find earliest grandparent file that contains key.
         const InternalKeyComparator *icmp = &vset->icmp_;
         while (grandparent_index_ < grandparents_.size() &&

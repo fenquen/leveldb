@@ -41,12 +41,14 @@ namespace leveldb {
     FileLock::~FileLock() = default;
 
     void Log(Logger *info_log, const char *format, ...) {
-        if (info_log != nullptr) {
-            std::va_list ap;
-            va_start(ap, format);
-            info_log->Logv(format, ap);
-            va_end(ap);
+        if (info_log == nullptr) {
+            return;
         }
+
+        std::va_list vaList;
+        va_start(vaList, format);
+        info_log->Logv(format, vaList);
+        va_end(vaList);
     }
 
     static Status DoWriteStringToFile(Env *env, const Slice &data,
@@ -80,29 +82,37 @@ namespace leveldb {
         return DoWriteStringToFile(env, data, fname, true);
     }
 
-    Status ReadFileToString(Env *env, const std::string &fname, std::string *data) {
-        data->clear();
-        SequentialFile *file;
-        Status s = env->NewSequentialFile(fname, &file);
-        if (!s.ok()) {
-            return s;
+    Status ReadFileToString(Env *env, const std::string &filePath, std::string *dest) {
+        dest->clear();
+
+        SequentialFile *sequentialFile;
+        Status status = env->NewSequentialFile(filePath, &sequentialFile);
+        if (!status.ok()) {
+            return status;
         }
-        static const int kBufferSize = 8192;
-        char *space = new char[kBufferSize];
+
+        static const int BUFFER_SIZE = 8192;
+
+        char *buffer = new char[BUFFER_SIZE];
         while (true) {
-            Slice fragment;
-            s = file->Read(kBufferSize, &fragment, space);
-            if (!s.ok()) {
+            Slice slice;
+
+            status = sequentialFile->Read(BUFFER_SIZE, &slice, buffer);
+            if (!status.ok()) {
                 break;
             }
-            data->append(fragment.data(), fragment.size());
-            if (fragment.empty()) {
+
+            dest->append(slice.data(), slice.size());
+
+            if (slice.empty()) {
                 break;
             }
         }
-        delete[] space;
-        delete file;
-        return s;
+
+        delete[] buffer;
+        delete sequentialFile;
+
+        return status;
     }
 
     EnvWrapper::~EnvWrapper() {}

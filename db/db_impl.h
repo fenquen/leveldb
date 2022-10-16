@@ -183,7 +183,7 @@ namespace leveldb {
         const Options options_;  // options_.comparator == &internal_comparator_
         const bool owns_info_log_;
         const bool owns_cache_;
-        const std::string dbname_;
+        const std::string dbname_; // 是dir的path
 
         // table_cache_ provides its own synchronization
         TableCache *const table_cache_;
@@ -218,7 +218,7 @@ namespace leveldb {
 
         ManualCompaction *manual_compaction_ GUARDED_BY(mutex_);
 
-        VersionSet *const versions_ GUARDED_BY(mutex_);
+        VersionSet *const versionSet GUARDED_BY(mutex_);
 
         // Have we encountered a background error in paranoid mode?
         Status bg_error_ GUARDED_BY(mutex_);

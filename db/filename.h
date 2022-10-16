@@ -43,14 +43,10 @@ std::string TableFileName(const std::string& dbname, uint64_t number);
 // "dbname".
 std::string SSTTableFileName(const std::string& dbname, uint64_t number);
 
-// Return the name of the descriptor file for the db named by
-// "dbname" and the specified incarnation number.  The result will be
-// prefixed with "dbname".
+// dbname/MANIFEST-number
 std::string DescriptorFileName(const std::string& dbname, uint64_t number);
 
-// Return the name of the current file.  This file contains the name
-// of the current manifest file.  The result will be prefixed with
-// "dbname".
+// dbname + "/CURRENT"
 std::string CurrentFileName(const std::string& dbname);
 
 // Return the name of the lock file for the db named by
@@ -70,13 +66,9 @@ std::string OldInfoLogFileName(const std::string& dbname);
 // If filename is a leveldb file, store the type of the file in *type.
 // The number encoded in the filename is stored in *number.  If the
 // filename was successfully parsed, returns true.  Else return false.
-bool ParseFileName(const std::string& filename, uint64_t* number,
-                   FileType* type);
+bool ParseFileName(const std::string& filename, uint64_t* number,FileType* type);
 
-// Make the CURRENT file point to the descriptor file with the
-// specified number.
-Status SetCurrentFile(Env* env, const std::string& dbname,
-                      uint64_t descriptor_number);
+Status SetCurrentFile(Env* env, const std::string& dbname,uint64_t descriptorNumber);
 
 }  // namespace leveldb
 

@@ -102,44 +102,53 @@ namespace leveldb {
             std::atomic<int> acquires_allowed_;
         };
 
-// Implements sequential read access in a file using read().
-//
-// Instances of this class are thread-friendly but not thread-safe, as required
-// by the SequentialFile API.
+        // Implements sequential read access in a file using read().
+        //
+        // Instances of this class are thread-friendly but not thread-safe, as required
+        // by the SequentialFile API.
         class PosixSequentialFile final : public SequentialFile {
         public:
-            PosixSequentialFile(std::string filename, int fd)
-                    : fd_(fd), filename_(filename) {}
+            PosixSequentialFile(std::string filePath, int fd) : fd(fd),
+                                                                filePath(std::move(filePath)) {
 
-            ~PosixSequentialFile() override { close(fd_); }
+            }
 
-            Status Read(size_t n, Slice *result, char *scratch) override {
+            ~PosixSequentialFile() override {
+                close(fd);
+            }
+
+            Status Read(size_t n, Slice *result, char *buffer) override {
                 Status status;
                 while (true) {
-                    ::ssize_t read_size = ::read(fd_, scratch, n);
-                    if (read_size < 0) {  // Read error.
+                    ::ssize_t readByteLen = ::read(fd, buffer, n);
+
+                    if (readByteLen < 0) {  // Read error.
                         if (errno == EINTR) {
                             continue;  // Retry
                         }
-                        status = PosixError(filename_, errno);
+
+                        status = PosixError(filePath, errno);
                         break;
                     }
-                    *result = Slice(scratch, read_size);
+
+                    *result = Slice(buffer, readByteLen);
+
                     break;
                 }
                 return status;
             }
 
             Status Skip(uint64_t n) override {
-                if (::lseek(fd_, n, SEEK_CUR) == static_cast<off_t>(-1)) {
-                    return PosixError(filename_, errno);
+                if (::lseek(fd, n, SEEK_CUR) == static_cast<off_t>(-1)) {
+                    return PosixError(filePath, errno);
                 }
+
                 return Status::OK();
             }
 
         private:
-            const int fd_;
-            const std::string filename_;
+            const int fd;
+            const std::string filePath;
         };
 
 // Implements random read access in a file using pread().
@@ -250,12 +259,13 @@ namespace leveldb {
 
         class PosixWritableFile final : public WritableFile {
         public:
-            PosixWritableFile(std::string filename, int fd)
-                    : pos_(0),
-                      fd_(fd),
-                      is_manifest_(IsManifest(filename)),
-                      filename_(std::move(filename)),
-                      dirname_(Dirname(filename_)) {}
+            PosixWritableFile(std::string filePath, int fd) : pos_(0),
+                                                              fd_(fd),
+                                                              is_manifest_(IsManifest(filePath)),
+                                                              filePath(std::move(filePath)),
+                                                              dirname_(Dirname(filePath)) {
+
+            }
 
             ~PosixWritableFile() override {
                 if (fd_ >= 0) {
@@ -295,15 +305,17 @@ namespace leveldb {
 
             Status Close() override {
                 Status status = FlushBuffer();
-                const int close_result = ::close(fd_);
-                if (close_result < 0 && status.ok()) {
-                    status = PosixError(filename_, errno);
+                const int closeResult = ::close(fd_);
+                if (closeResult < 0 && status.ok()) {
+                    status = PosixError(filePath, errno);
                 }
                 fd_ = -1;
                 return status;
             }
 
-            Status Flush() override { return FlushBuffer(); }
+            Status Flush() override {
+                return FlushBuffer();
+            }
 
             Status Sync() override {
                 // Ensure new files referred to by the manifest are in the filesystem.
@@ -321,7 +333,7 @@ namespace leveldb {
                     return status;
                 }
 
-                return SyncFd(fd_, filename_);
+                return SyncFd(fd_, filePath);
             }
 
         private:
@@ -333,16 +345,19 @@ namespace leveldb {
 
             Status WriteUnbuffered(const char *data, size_t size) {
                 while (size > 0) {
-                    ssize_t write_result = ::write(fd_, data, size);
-                    if (write_result < 0) {
+                    ssize_t writtenLen = ::write(fd_, data, size);
+                    if (writtenLen < 0) {
                         if (errno == EINTR) {
-                            continue;  // Retry
+                            continue;  // retry
                         }
-                        return PosixError(filename_, errno);
+
+                        return PosixError(filePath, errno);
                     }
-                    data += write_result;
-                    size -= write_result;
+
+                    data += writtenLen;
+                    size -= writtenLen;
                 }
+
                 return Status::OK();
             }
 
@@ -352,13 +367,14 @@ namespace leveldb {
                     return status;
                 }
 
-                int fd = ::open(dirname_.c_str(), O_RDONLY | kOpenBaseFlags);
-                if (fd < 0) {
+                int directoryFd = ::open(dirname_.c_str(), O_RDONLY | kOpenBaseFlags);
+                if (directoryFd < 0) {
                     status = PosixError(dirname_, errno);
                 } else {
-                    status = SyncFd(fd, dirname_);
-                    ::close(fd);
+                    status = SyncFd(directoryFd, dirname_);
+                    ::close(directoryFd);
                 }
+
                 return status;
             }
 
@@ -368,7 +384,7 @@ namespace leveldb {
             //
             // The path argument is only used to populate the description string in the
             // returned Status if an error occurs.
-            static Status SyncFd(int fd, const std::string &fd_path) {
+            static Status SyncFd(int fd, const std::string &filePath) {
 #if HAVE_FULLFSYNC
                 // On macOS and iOS, fsync() doesn't guarantee durability past power
                 // failures. fcntl(F_FULLFSYNC) is required for that purpose. Some
@@ -377,65 +393,67 @@ namespace leveldb {
                 if (::fcntl(fd, F_FULLFSYNC) == 0) {
                   return Status::OK();
                 }
-#endif  // HAVE_FULLFSYNC
+#endif
 
 #if HAVE_FDATASYNC
-                bool sync_success = ::fdatasync(fd) == 0;
+                bool success = ::fdatasync(fd) == 0;
 #else
-                bool sync_success = ::fsync(fd) == 0;
-#endif  // HAVE_FDATASYNC
+                bool success = ::fsync(fd) == 0;
+#endif
 
-                if (sync_success) {
+                if (success) {
                     return Status::OK();
                 }
-                return PosixError(fd_path, errno);
+
+                return PosixError(filePath, errno);
             }
 
             // Returns the directory name in a path pointing to a file.
-            //
-            // Returns "." if the path does not contain any directory separator.
+            // Return "." if the path does not contain any directory separator.
             static std::string Dirname(const std::string &filename) {
-                std::string::size_type separator_pos = filename.rfind('/');
-                if (separator_pos == std::string::npos) {
-                    return std::string(".");
+                std::string::size_type lastSlashIndex = filename.rfind('/');
+                if (lastSlashIndex == std::string::npos) {
+                    return std::string{"."}; // 使用列表的套路来初始化
                 }
+
                 // The filename component should not contain a path separator. If it does,
                 // the splitting was done incorrectly.
-                assert(filename.find('/', separator_pos + 1) == std::string::npos);
+                assert(filename.find('/', lastSlashIndex + 1) == std::string::npos);
 
-                return filename.substr(0, separator_pos);
+                return filename.substr(0, lastSlashIndex);
             }
 
             // Extracts the file name from a path pointing to a file.
             //
-            // The returned Slice points to |filename|'s data buffer, so it is only valid
-            // while |filename| is alive and unchanged.
-            static Slice Basename(const std::string &filename) {
-                std::string::size_type separator_pos = filename.rfind('/');
-                if (separator_pos == std::string::npos) {
-                    return Slice(filename);
+            // The returned Slice points to |filePath|'s data buffer, so it is only valid
+            // while |filePath| is alive and unchanged.
+            static Slice Basename(const std::string &filePath) {
+                std::string::size_type lastSlashIndex = filePath.rfind('/');
+                if (lastSlashIndex == std::string::npos) {
+                    return Slice(filePath);
                 }
-                // The filename component should not contain a path separator. If it does,
-                // the splitting was done incorrectly.
-                assert(filename.find('/', separator_pos + 1) == std::string::npos);
 
-                return Slice(filename.data() + separator_pos + 1,
-                             filename.length() - separator_pos - 1);
+                // The filePath component should not contain a path separator. If it does,
+                // the splitting was done incorrectly.
+                assert(filePath.find('/', lastSlashIndex + 1) == std::string::npos);
+
+                return Slice(filePath.data() + lastSlashIndex + 1,
+                             filePath.length() - lastSlashIndex - 1);
             }
 
             // True if the given file is a manifest file.
-            static bool IsManifest(const std::string &filename) {
-                return Basename(filename).starts_with("MANIFEST");
+            static bool IsManifest(const std::string &filePath) {
+                return Basename(filePath).starts_with("MANIFEST");
             }
 
-            // buf_[0, pos_ - 1] contains data to be written to fd_.
+            // buf_[0, pos_ - 1] contains data to be written to fd.
             char buf_[kWritableFileBufferSize];
             size_t pos_;
             int fd_;
 
             const bool is_manifest_;  // True if the file's name starts with MANIFEST.
-            const std::string filename_;
-            const std::string dirname_;  // The directory of filename_.
+            const std::string filePath;
+            const std::string dirname_;  // The directory of filePath.
         };
 
         int LockOrUnlock(int fd, bool lock) {
@@ -510,8 +528,7 @@ namespace leveldb {
                 std::abort();
             }
 
-            Status NewSequentialFile(const std::string &filename,
-                                     SequentialFile **result) override {
+            Status NewSequentialFile(const std::string &filename, SequentialFile **result) override {
                 int fd = ::open(filename.c_str(), O_RDONLY | kOpenBaseFlags);
                 if (fd < 0) {
                     *result = nullptr;
@@ -555,16 +572,14 @@ namespace leveldb {
                 return status;
             }
 
-            Status NewWritableFile(const std::string &filename,
-                                   WritableFile **result) override {
-                int fd = ::open(filename.c_str(),
-                                O_TRUNC | O_WRONLY | O_CREAT | kOpenBaseFlags, 0644);
+            Status NewWritableFile(const std::string &filePath, WritableFile **result) override {
+                int fd = ::open(filePath.c_str(), O_TRUNC | O_WRONLY | O_CREAT | kOpenBaseFlags, 0644);
                 if (fd < 0) {
                     *result = nullptr;
-                    return PosixError(filename, errno);
+                    return PosixError(filePath, errno);
                 }
 
-                *result = new PosixWritableFile(filename, fd);
+                *result = new PosixWritableFile(filePath, fd);
                 return Status::OK();
             }
 

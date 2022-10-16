@@ -96,7 +96,7 @@ namespace leveldb {
         // returns non-OK.
         //
         // The returned file will only be accessed by one thread at a time.
-        virtual Status NewWritableFile(const std::string &fname, WritableFile **result) = 0;
+        virtual Status NewWritableFile(const std::string &filePath, WritableFile **result) = 0;
 
         // Create an object that either appends to an existing file, or
         // writes to a new file (if the file does not exist to begin with).
@@ -220,7 +220,7 @@ namespace leveldb {
         virtual void SleepForMicroseconds(int micros) = 0;
     };
 
-// A file abstraction for reading sequentially through a file
+    // A file abstraction for reading sequentially through a file
     class LEVELDB_EXPORT SequentialFile {
     public:
         SequentialFile() = default;
@@ -335,9 +335,9 @@ namespace leveldb {
     LEVELDB_EXPORT Status WriteStringToFile(Env *env, const Slice &data,
                                             const std::string &fname);
 
-// A utility routine: read contents of named file into *data
-    LEVELDB_EXPORT Status ReadFileToString(Env *env, const std::string &fname,
-                                           std::string *data);
+// A utility routine: read contents of named file into *dest
+    LEVELDB_EXPORT Status ReadFileToString(Env *env, const std::string &filePath,
+                                           std::string *dest);
 
 // An implementation of Env that forwards all calls to another Env.
 // May be useful to clients who wish to override just part of the

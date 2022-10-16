@@ -129,15 +129,14 @@ namespace leveldb {
 
         class LevelFileNumIterator;
 
-        explicit Version(VersionSet *vset)
-                : vset_(vset),
-                  next_(this),
-                  prev_(this),
-                  refs_(0),
-                  file_to_compact_(nullptr),
-                  file_to_compact_level_(-1),
-                  compaction_score_(-1),
-                  compaction_level_(-1) {}
+        explicit Version(VersionSet *versionSet) : versionSet(versionSet),
+                                                   next_(this),
+                                                   prev_(this),
+                                                   refs_(0),
+                                                   file_to_compact_(nullptr),
+                                                   file_to_compact_level_(-1),
+                                                   compaction_score_(-1),
+                                                   compaction_level_(-1) {}
 
         Version(const Version &) = delete;
 
@@ -155,7 +154,7 @@ namespace leveldb {
         void ForEachOverlapping(Slice user_key, Slice internal_key, void *arg,
                                 bool (*func)(void *, int, FileMetaData *));
 
-        VersionSet *vset_;  // VersionSet to which this Version belongs
+        VersionSet *versionSet;  // VersionSet to which this Version belongs
         Version *next_;     // Next version in linked list
         Version *prev_;     // Previous version in linked list
         int refs_;          // Number of live refs to this version
@@ -176,8 +175,10 @@ namespace leveldb {
 
     class VersionSet {
     public:
-        VersionSet(const std::string &dbname, const Options *options,
-                   TableCache *table_cache, const InternalKeyComparator *);
+        VersionSet(std::string dbname,
+                   const Options *options,
+                   TableCache *table_cache,
+                   const InternalKeyComparator *);
 
         VersionSet(const VersionSet &) = delete;
 

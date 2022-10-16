@@ -47,7 +47,7 @@ namespace leveldb {
 // any external synchronization.
     class LEVELDB_EXPORT DB {
     public:
-        // Open the database with the specified "name".
+        // Open the database with the specified "name", name是dir的path
         // Stores a pointer to a heap-allocated database in *db and returns OK on success.
         // Stores nullptr in *db and returns a non-OK status on error.
         // Caller should delete *db when it is no longer needed.

@@ -155,10 +155,10 @@ namespace leveldb {
               tmp_batch_(new WriteBatch),
               background_compaction_scheduled_(false),
               manual_compaction_(nullptr),
-              versions_(new VersionSet(dbname_,
-                                       &options_,
-                                       table_cache_,
-                                       &internal_comparator_)) {}
+              versionSet(new VersionSet(dbname_,
+                                        &options_,
+                                        table_cache_,
+                                        &internal_comparator_)) {}
 
     DBImpl::~DBImpl() {
         // Wait for background work to finish.
@@ -173,7 +173,7 @@ namespace leveldb {
             env_->UnlockFile(db_lock_);
         }
 
-        delete versions_;
+        delete versionSet;
         if (mem_ != nullptr) mem_->Unref();
         if (imm_ != nullptr) imm_->Unref();
         delete tmp_batch_;
@@ -190,38 +190,48 @@ namespace leveldb {
     }
 
     Status DBImpl::NewDB() {
-        VersionEdit new_db;
-        new_db.SetComparatorName(user_comparator()->Name());
-        new_db.SetLogNumber(0);
-        new_db.SetNextFile(2);
-        new_db.SetLastSequence(0);
+        VersionEdit versionEdit;
+        versionEdit.SetComparatorName(user_comparator()->Name());
+        versionEdit.SetLogNumber(0);
+        versionEdit.SetNextFile(2);
+        versionEdit.SetLastSequence(0);
 
-        const std::string manifest = DescriptorFileName(dbname_, 1);
-        WritableFile *file;
-        Status s = env_->NewWritableFile(manifest, &file);
-        if (!s.ok()) {
-            return s;
+        // dbname/MANIFEST-number
+        const std::string manifestFilePath = DescriptorFileName(dbname_, 1);
+        WritableFile *manifestFileWritable;
+        Status status = env_->NewWritableFile(manifestFilePath, &manifestFileWritable);
+        if (!status.ok()) {
+            return status;
         }
+
+        // 向manifestFile写入data,然后调用sync
         {
-            log::Writer log(file);
+            log::Writer manifestFileWriter(manifestFileWritable);
+
             std::string record;
-            new_db.EncodeTo(&record);
-            s = log.AddRecord(record);
-            if (s.ok()) {
-                s = file->Sync();
+            versionEdit.EncodeTo(&record);
+
+            status = manifestFileWriter.AddRecord(record);
+            if (status.ok()) {
+                status = manifestFileWritable->Sync();
             }
-            if (s.ok()) {
-                s = file->Close();
+
+            if (status.ok()) {
+                status = manifestFileWritable->Close();
             }
         }
-        delete file;
-        if (s.ok()) {
-            // Make "CURRENT" file that points to the new manifest file.
-            s = SetCurrentFile(env_, dbname_, 1);
+
+        delete manifestFileWritable;
+
+        if (status.ok()) {
+            // Make current file point to the new manifestFile
+            // descNumber 和 DescriptorFileName () 用到的相同
+            status = SetCurrentFile(env_, dbname_, 1);
         } else {
-            env_->RemoveFile(manifest);
+            env_->RemoveFile(manifestFilePath);
         }
-        return s;
+
+        return status;
     }
 
     void DBImpl::MaybeIgnoreError(Status *s) const {
@@ -244,7 +254,7 @@ namespace leveldb {
 
         // Make a set of all of the live files
         std::set<uint64_t> live = pending_outputs_;
-        versions_->AddLiveFiles(&live);
+        versionSet->AddLiveFiles(&live);
 
         std::vector<std::string> filenames;
         env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
@@ -256,13 +266,13 @@ namespace leveldb {
                 bool keep = true;
                 switch (type) {
                     case kLogFile:
-                        keep = ((number >= versions_->LogNumber()) ||
-                                (number == versions_->PrevLogNumber()));
+                        keep = ((number >= versionSet->LogNumber()) ||
+                                (number == versionSet->PrevLogNumber()));
                         break;
                     case kDescriptorFile:
                         // Keep my manifest file, and any newer incarnations'
                         // (in case there is a race that allows other incarnations)
-                        keep = (number >= versions_->ManifestFileNumber());
+                        keep = (number >= versionSet->ManifestFileNumber());
                         break;
                     case kTableFile:
                         keep = (live.find(number) != live.end());
@@ -307,35 +317,35 @@ namespace leveldb {
         // committed only when the descriptor is created, and this directory
         // may already exist from a previous failed creation attempt.
         env_->CreateDir(dbname_);
+
         assert(db_lock_ == nullptr);
-        Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);
-        if (!s.ok()) {
-            return s;
+        Status status = env_->LockFile(LockFileName(dbname_), &db_lock_);
+        if (!status.ok()) {
+            return status;
         }
 
         if (!env_->FileExists(CurrentFileName(dbname_))) {
             if (options_.create_if_missing) {
-                Log(options_.logger, "Creating DB %s since it was missing.",
-                    dbname_.c_str());
-                s = NewDB();
-                if (!s.ok()) {
-                    return s;
+                Log(options_.logger, "Creating DB %status since it was missing", dbname_.c_str());
+                status = NewDB();
+                if (!status.ok()) {
+                    return status;
                 }
             } else {
-                return Status::InvalidArgument(
-                        dbname_, "does not exist (create_if_missing is false)");
+                return Status::InvalidArgument(dbname_, "does not exist (create_if_missing is false)");
             }
         } else {
+            // 不允许已存在
             if (options_.error_if_exists) {
-                return Status::InvalidArgument(dbname_,
-                                               "exists (error_if_exists is true)");
+                return Status::InvalidArgument(dbname_, "exists (error_if_exists is true)");
             }
         }
 
-        s = versions_->Recover(save_manifest);
-        if (!s.ok()) {
-            return s;
+        status = versionSet->Recover(save_manifest);
+        if (!status.ok()) {
+            return status;
         }
+
         SequenceNumber max_sequence(0);
 
         // Recover from all newer log files than the ones named in the
@@ -345,15 +355,15 @@ namespace leveldb {
         // Note that PrevLogNumber() is no longer used, but we pay
         // attention to it in case we are recovering a database
         // produced by an older version of leveldb.
-        const uint64_t min_log = versions_->LogNumber();
-        const uint64_t prev_log = versions_->PrevLogNumber();
+        const uint64_t min_log = versionSet->LogNumber();
+        const uint64_t prev_log = versionSet->PrevLogNumber();
         std::vector<std::string> filenames;
-        s = env_->GetChildren(dbname_, &filenames);
-        if (!s.ok()) {
-            return s;
+        status = env_->GetChildren(dbname_, &filenames);
+        if (!status.ok()) {
+            return status;
         }
         std::set<uint64_t> expected;
-        versions_->AddLiveFiles(&expected);
+        versionSet->AddLiveFiles(&expected);
         uint64_t number;
         FileType type;
         std::vector<uint64_t> logs;
@@ -374,20 +384,20 @@ namespace leveldb {
         // Recover in the order in which the logs were generated
         std::sort(logs.begin(), logs.end());
         for (size_t i = 0; i < logs.size(); i++) {
-            s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
-                               &max_sequence);
-            if (!s.ok()) {
-                return s;
+            status = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
+                                    &max_sequence);
+            if (!status.ok()) {
+                return status;
             }
 
             // The previous incarnation may not have written any MANIFEST
             // records after allocating this log number.  So we manually
             // update the file number allocation counter in VersionSet.
-            versions_->MarkFileNumberUsed(logs[i]);
+            versionSet->MarkFileNumberUsed(logs[i]);
         }
 
-        if (versions_->LastSequence() < max_sequence) {
-            versions_->SetLastSequence(max_sequence);
+        if (versionSet->LastSequence() < max_sequence) {
+            versionSet->SetLastSequence(max_sequence);
         }
 
         return Status::OK();
@@ -518,7 +528,7 @@ namespace leveldb {
         mutex_.AssertHeld();
         const uint64_t start_micros = env_->NowMicros();
         FileMetaData meta;
-        meta.number = versions_->NewFileNumber();
+        meta.number = versionSet->NewFileNumber();
         pending_outputs_.insert(meta.number);
         Iterator *iter = mem->NewIterator();
         Log(options_.logger, "Level-0 table #%llu: started",
@@ -563,7 +573,7 @@ namespace leveldb {
 
         // Save the contents of the memtable as a new Table
         VersionEdit edit;
-        Version *base = versions_->current();
+        Version *base = versionSet->current();
         base->Ref();
         Status s = WriteLevel0Table(imm_, &edit, base);
         base->Unref();
@@ -576,7 +586,7 @@ namespace leveldb {
         if (s.ok()) {
             edit.SetPrevLogNumber(0);
             edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
-            s = versions_->LogAndApply(&edit, &mutex_);
+            s = versionSet->LogAndApply(&edit, &mutex_);
         }
 
         if (s.ok()) {
@@ -594,7 +604,7 @@ namespace leveldb {
         int max_level_with_files = 1;
         {
             MutexLock l(&mutex_);
-            Version *base = versions_->current();
+            Version *base = versionSet->current();
             for (int level = 1; level < config::kNumLevels; level++) {
                 if (base->OverlapInLevel(level, begin, end)) {
                     max_level_with_files = level;
@@ -679,7 +689,7 @@ namespace leveldb {
         } else if (!bg_error_.ok()) {
             // Already got an error; no more changes
         } else if (imm_ == nullptr && manual_compaction_ == nullptr &&
-                   !versions_->NeedsCompaction()) {
+                   !versionSet->NeedsCompaction()) {
             // No work to be done
         } else {
             background_compaction_scheduled_ = true;
@@ -723,7 +733,7 @@ namespace leveldb {
         InternalKey manual_end;
         if (is_manual) {
             ManualCompaction *m = manual_compaction_;
-            c = versions_->CompactRange(m->level, m->begin, m->end);
+            c = versionSet->CompactRange(m->level, m->begin, m->end);
             m->done = (c == nullptr);
             if (c != nullptr) {
                 manual_end = c->input(0, c->num_input_files(0) - 1)->largest;
@@ -734,7 +744,7 @@ namespace leveldb {
                 (m->end ? m->end->DebugString().c_str() : "(end)"),
                 (m->done ? "(end)" : manual_end.DebugString().c_str()));
         } else {
-            c = versions_->PickCompaction();
+            c = versionSet->PickCompaction();
         }
 
         Status status;
@@ -747,7 +757,7 @@ namespace leveldb {
             c->edit()->RemoveFile(c->level(), f->number);
             c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
                                f->largest);
-            status = versions_->LogAndApply(c->edit(), &mutex_);
+            status = versionSet->LogAndApply(c->edit(), &mutex_);
             if (!status.ok()) {
                 RecordBackgroundError(status);
             }
@@ -755,7 +765,7 @@ namespace leveldb {
             Log(options_.logger, "Moved #%lld to level-%d %lld bytes %s: %s\n",
                 static_cast<unsigned long long>(f->number), c->level() + 1,
                 static_cast<unsigned long long>(f->file_size),
-                status.ToString().c_str(), versions_->LevelSummary(&tmp));
+                status.ToString().c_str(), versionSet->LevelSummary(&tmp));
         } else {
             CompactionState *compact = new CompactionState(c);
             status = DoCompactionWork(compact);
@@ -814,7 +824,7 @@ namespace leveldb {
         uint64_t file_number;
         {
             mutex_.Lock();
-            file_number = versions_->NewFileNumber();
+            file_number = versionSet->NewFileNumber();
             pending_outputs_.insert(file_number);
             CompactionState::Output out;
             out.number = file_number;
@@ -897,7 +907,7 @@ namespace leveldb {
             compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
                                                  out.smallest, out.largest);
         }
-        return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
+        return versionSet->LogAndApply(compact->compaction->edit(), &mutex_);
     }
 
     Status DBImpl::DoCompactionWork(CompactionState *compact) {
@@ -909,16 +919,16 @@ namespace leveldb {
             compact->compaction->num_input_files(1),
             compact->compaction->level() + 1);
 
-        assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
+        assert(versionSet->NumLevelFiles(compact->compaction->level()) > 0);
         assert(compact->builder == nullptr);
         assert(compact->outfile == nullptr);
         if (snapshots_.empty()) {
-            compact->smallest_snapshot = versions_->LastSequence();
+            compact->smallest_snapshot = versionSet->LastSequence();
         } else {
             compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
         }
 
-        Iterator *input = versions_->MakeInputIterator(compact->compaction);
+        Iterator *input = versionSet->MakeInputIterator(compact->compaction);
 
         // Release mutex while we're actually doing the compaction work
         mutex_.Unlock();
@@ -1057,7 +1067,7 @@ namespace leveldb {
             RecordBackgroundError(status);
         }
         VersionSet::LevelSummaryStorage tmp;
-        Log(options_.logger, "compacted to: %s", versions_->LevelSummary(&tmp));
+        Log(options_.logger, "compacted to: %s", versionSet->LevelSummary(&tmp));
         return status;
     }
 
@@ -1089,7 +1099,7 @@ namespace leveldb {
                                           SequenceNumber *latest_snapshot,
                                           uint32_t *seed) {
         mutex_.Lock();
-        *latest_snapshot = versions_->LastSequence();
+        *latest_snapshot = versionSet->LastSequence();
 
         // Collect together all needed child iterators
         std::vector<Iterator *> list;
@@ -1099,12 +1109,12 @@ namespace leveldb {
             list.push_back(imm_->NewIterator());
             imm_->Ref();
         }
-        versions_->current()->AddIterators(options, &list);
+        versionSet->current()->AddIterators(options, &list);
         Iterator *internal_iter =
                 NewMergingIterator(&internal_comparator_, &list[0], list.size());
-        versions_->current()->Ref();
+        versionSet->current()->Ref();
 
-        IterState *cleanup = new IterState(&mutex_, mem_, imm_, versions_->current());
+        IterState *cleanup = new IterState(&mutex_, mem_, imm_, versionSet->current());
         internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
 
         *seed = ++seed_;
@@ -1120,7 +1130,7 @@ namespace leveldb {
 
     int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
         MutexLock l(&mutex_);
-        return versions_->MaxNextLevelOverlappingBytes();
+        return versionSet->MaxNextLevelOverlappingBytes();
     }
 
     Status DBImpl::Get(const ReadOptions &options, const Slice &key,
@@ -1132,12 +1142,12 @@ namespace leveldb {
             snapshot =
                     static_cast<const SnapshotImpl *>(options.snapshot)->sequence_number();
         } else {
-            snapshot = versions_->LastSequence();
+            snapshot = versionSet->LastSequence();
         }
 
         MemTable *mem = mem_;
         MemTable *imm = imm_;
-        Version *current = versions_->current();
+        Version *current = versionSet->current();
         mem->Ref();
         if (imm != nullptr) imm->Ref();
         current->Ref();
@@ -1184,14 +1194,14 @@ namespace leveldb {
 
     void DBImpl::RecordReadSample(Slice key) {
         MutexLock l(&mutex_);
-        if (versions_->current()->RecordReadSample(key)) {
+        if (versionSet->current()->RecordReadSample(key)) {
             MaybeScheduleCompaction();
         }
     }
 
     const Snapshot *DBImpl::GetSnapshot() {
         MutexLock l(&mutex_);
-        return snapshots_.New(versions_->LastSequence());
+        return snapshots_.New(versionSet->LastSequence());
     }
 
     void DBImpl::ReleaseSnapshot(const Snapshot *snapshot) {
@@ -1225,7 +1235,7 @@ namespace leveldb {
 
         // May temporarily unlock and wait.
         Status status = MakeRoomForWrite(updates == nullptr);
-        uint64_t last_sequence = versions_->LastSequence();
+        uint64_t last_sequence = versionSet->LastSequence();
         Writer *last_writer = &w;
         if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
             WriteBatch *write_batch = BuildBatchGroup(&last_writer);
@@ -1259,7 +1269,7 @@ namespace leveldb {
             }
             if (write_batch == tmp_batch_) tmp_batch_->Clear();
 
-            versions_->SetLastSequence(last_sequence);
+            versionSet->SetLastSequence(last_sequence);
         }
 
         while (true) {
@@ -1343,7 +1353,7 @@ namespace leveldb {
                 // Yield previous error
                 s = bg_error_;
                 break;
-            } else if (allow_delay && versions_->NumLevelFiles(0) >=
+            } else if (allow_delay && versionSet->NumLevelFiles(0) >=
                                       config::kL0_SlowdownWritesTrigger) {
                 // We are getting close to hitting a hard limit on the number of
                 // L0 files.  Rather than delaying a single write by several
@@ -1364,19 +1374,19 @@ namespace leveldb {
                 // one is still being compacted, so we wait.
                 Log(options_.logger, "Current memtable full; waiting...\n");
                 background_work_finished_signal_.Wait();
-            } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
+            } else if (versionSet->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
                 // There are too many level-0 files.
                 Log(options_.logger, "Too many L0 files; waiting...\n");
                 background_work_finished_signal_.Wait();
             } else {
                 // Attempt to switch to a new memtable and trigger compaction of old
-                assert(versions_->PrevLogNumber() == 0);
-                uint64_t new_log_number = versions_->NewFileNumber();
+                assert(versionSet->PrevLogNumber() == 0);
+                uint64_t new_log_number = versionSet->NewFileNumber();
                 WritableFile *lfile = nullptr;
                 s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
                 if (!s.ok()) {
                     // Avoid chewing through file number space in a tight loop.
-                    versions_->ReuseFileNumber(new_log_number);
+                    versionSet->ReuseFileNumber(new_log_number);
                     break;
                 }
                 delete log_;
@@ -1413,7 +1423,7 @@ namespace leveldb {
             } else {
                 char buf[100];
                 std::snprintf(buf, sizeof(buf), "%d",
-                              versions_->NumLevelFiles(static_cast<int>(level)));
+                              versionSet->NumLevelFiles(static_cast<int>(level)));
                 *value = buf;
                 return true;
             }
@@ -1425,10 +1435,10 @@ namespace leveldb {
                           "--------------------------------------------------\n");
             value->append(buf);
             for (int level = 0; level < config::kNumLevels; level++) {
-                int files = versions_->NumLevelFiles(level);
+                int files = versionSet->NumLevelFiles(level);
                 if (stats_[level].micros > 0 || files > 0) {
                     std::snprintf(buf, sizeof(buf), "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
-                                  level, files, versions_->NumLevelBytes(level) / 1048576.0,
+                                  level, files, versionSet->NumLevelBytes(level) / 1048576.0,
                                   stats_[level].micros / 1e6,
                                   stats_[level].bytes_read / 1048576.0,
                                   stats_[level].bytes_written / 1048576.0);
@@ -1437,7 +1447,7 @@ namespace leveldb {
             }
             return true;
         } else if (in == "sstables") {
-            *value = versions_->current()->DebugString();
+            *value = versionSet->current()->DebugString();
             return true;
         } else if (in == "approximate-memory-usage") {
             size_t total_usage = options_.blockCache->TotalCharge();
@@ -1460,15 +1470,15 @@ namespace leveldb {
     void DBImpl::GetApproximateSizes(const Range *range, int n, uint64_t *sizes) {
         // TODO(opt): better implementation
         MutexLock l(&mutex_);
-        Version *v = versions_->current();
+        Version *v = versionSet->current();
         v->Ref();
 
         for (int i = 0; i < n; i++) {
             // Convert user_key into a corresponding internal key.
             InternalKey k1(range[i].start, kMaxSequenceNumber, kValueTypeForSeek);
             InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
-            uint64_t start = versions_->ApproximateOffsetOf(v, k1);
-            uint64_t limit = versions_->ApproximateOffsetOf(v, k2);
+            uint64_t start = versionSet->ApproximateOffsetOf(v, k1);
+            uint64_t limit = versionSet->ApproximateOffsetOf(v, k2);
             sizes[i] = (limit >= start ? limit - start : 0);
         }
 
@@ -1499,15 +1509,13 @@ namespace leveldb {
         dbImpl->mutex_.Lock();
 
         VersionEdit versionEdit;
-        // Recover handles create_if_missing, error_if_exists
         bool saveManifest = false;
         Status status = dbImpl->Recover(&versionEdit, &saveManifest);
         if (status.ok() && dbImpl->mem_ == nullptr) {
             // Create new log and a corresponding memtable.
-            uint64_t new_log_number = dbImpl->versions_->NewFileNumber();
+            uint64_t new_log_number = dbImpl->versionSet->NewFileNumber();
             WritableFile *lfile;
-            status = options.env->NewWritableFile(LogFileName(dbname, new_log_number),
-                                                  &lfile);
+            status = options.env->NewWritableFile(LogFileName(dbname, new_log_number), &lfile);
             if (status.ok()) {
                 versionEdit.SetLogNumber(new_log_number);
                 dbImpl->logfile_ = lfile;
@@ -1517,11 +1525,13 @@ namespace leveldb {
                 dbImpl->mem_->Ref();
             }
         }
+
         if (status.ok() && saveManifest) {
             versionEdit.SetPrevLogNumber(0);  // No older logs needed after recovery.
             versionEdit.SetLogNumber(dbImpl->logfile_number_);
-            status = dbImpl->versions_->LogAndApply(&versionEdit, &dbImpl->mutex_);
+            status = dbImpl->versionSet->LogAndApply(&versionEdit, &dbImpl->mutex_);
         }
+
         if (status.ok()) {
             dbImpl->RemoveObsoleteFiles();
             dbImpl->MaybeScheduleCompaction();
