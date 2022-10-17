@@ -77,7 +77,7 @@ namespace leveldb {
         // NotFound status when the file does not exist.
         //
         // The returned file will only be accessed by one thread at a time.
-        virtual Status NewSequentialFile(const std::string &fname, SequentialFile **result) = 0;
+        virtual Status NewSequentialFile(const std::string &filePath, SequentialFile **result) = 0;
 
         // Create an object supporting random-access reads from the file with the
         // specified name.  On success, stores a pointer to the new file in

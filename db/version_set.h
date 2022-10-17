@@ -117,7 +117,7 @@ namespace leveldb {
         int PickLevelForMemTableOutput(const Slice &smallest_user_key,
                                        const Slice &largest_user_key);
 
-        int NumFiles(int level) const { return files_[level].size(); }
+        int NumFiles(int level) const { return fileMetaDataVecArr[level].size(); }
 
         // Return a human readable string that describes this version's contents.
         std::string DebugString() const;
@@ -129,7 +129,7 @@ namespace leveldb {
 
         class LevelFileNumIterator;
 
-        explicit Version(VersionSet *versionSet) : versionSet(versionSet),
+        explicit Version(VersionSet *versionSet) : belongingVersionSet(versionSet),
                                                    next_(this),
                                                    prev_(this),
                                                    refs_(0),
@@ -154,13 +154,13 @@ namespace leveldb {
         void ForEachOverlapping(Slice user_key, Slice internal_key, void *arg,
                                 bool (*func)(void *, int, FileMetaData *));
 
-        VersionSet *versionSet;  // VersionSet to which this Version belongs
+        VersionSet *belongingVersionSet;  // VersionSet to which this Version belongs
         Version *next_;     // Next version in linked list
         Version *prev_;     // Previous version in linked list
         int refs_;          // Number of live refs to this version
 
-        // List of files per level
-        std::vector<FileMetaData *> files_[config::kNumLevels];
+        // list of files per level
+        std::vector<FileMetaData *> fileMetaDataVecArr[config::kNumLevels];
 
         // Next file to compact based on seek stats.
         FileMetaData *file_to_compact_;
@@ -234,7 +234,9 @@ namespace leveldb {
         void MarkFileNumberUsed(uint64_t number);
 
         // Return the current log file number.
-        uint64_t LogNumber() const { return log_number_; }
+        uint64_t LogNumber() const {
+            return log_number_;
+        }
 
         // Return the log file number for the log file that is currently
         // being compacted, or zero if there is no such log file.
@@ -292,7 +294,7 @@ namespace leveldb {
 
         bool ReuseManifest(const std::string &dscname, const std::string &dscbase);
 
-        void Finalize(Version *v);
+        void Finalize(Version *version);
 
         void GetRange(const std::vector<FileMetaData *> &inputs, InternalKey *smallest,
                       InternalKey *largest);
@@ -397,7 +399,7 @@ namespace leveldb {
 
         // State for implementing IsBaseLevelForKey
 
-        // level_ptrs_ holds indices into input_version_->levels_: our state
+        // level_ptrs_ holds indices into input_version_->levelStateArr: our state
         // is that we are positioned at one of the file ranges for each
         // higher level than the ones involved in this compaction (i.e. for
         // all L >= level_ + 2).

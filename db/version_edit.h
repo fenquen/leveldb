@@ -16,7 +16,11 @@ namespace leveldb {
     class VersionSet;
 
     struct FileMetaData {
-        FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
+        FileMetaData() : refs(0),
+                         allowed_seeks(1 << 30),
+                         file_size(0) {
+
+        }
 
         int refs;
         int allowed_seeks;  // Seeks allowed until compaction

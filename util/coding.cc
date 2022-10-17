@@ -107,10 +107,10 @@ namespace leveldb {
         const char *q = GetVarint32Ptr(p, limit, value);
         if (q == nullptr) {
             return false;
-        } else {
-            *input = Slice(q, limit - q);
-            return true;
         }
+
+        *input = Slice(q, limit - q);
+        return true;
     }
 
     const char *GetVarint64Ptr(const char *p, const char *limit, uint64_t *value) {
@@ -156,11 +156,11 @@ namespace leveldb {
         uint32_t len;
         if (GetVarint32(input, &len) && input->size() >= len) {
             *result = Slice(input->data(), len);
-            input->remove_prefix(len);
+            input->remove_prefix(len); // 向前
             return true;
-        } else {
-            return false;
         }
+
+        return false;
     }
 
 }  // namespace leveldb

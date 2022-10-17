@@ -15,18 +15,19 @@ namespace leveldb {
 
         Reader::Reporter::~Reporter() = default;
 
-        Reader::Reader(SequentialFile *file, Reporter *reporter, bool checksum,
-                       uint64_t initial_offset)
-                : file_(file),
-                  reporter_(reporter),
-                  checksum_(checksum),
-                  backing_store_(new char[kBlockSize]),
-                  buffer_(),
-                  eof_(false),
-                  last_record_offset_(0),
-                  end_of_buffer_offset_(0),
-                  initial_offset_(initial_offset),
-                  resyncing_(initial_offset > 0) {}
+        Reader::Reader(SequentialFile *file,
+                       Reporter *reporter,
+                       bool checksum,
+                       uint64_t initial_offset) : file_(file),
+                                                  reporter_(reporter),
+                                                  checksum_(checksum),
+                                                  backing_store_(new char[kBlockSize]),
+                                                  buffer_(),
+                                                  eof_(false),
+                                                  last_record_offset_(0),
+                                                  end_of_buffer_offset_(0),
+                                                  initial_offset_(initial_offset),
+                                                  resyncing_(initial_offset > 0) {}
 
         Reader::~Reader() { delete[] backing_store_; }
 

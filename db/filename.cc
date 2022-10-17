@@ -22,7 +22,11 @@ namespace leveldb {
                                     uint64_t number,
                                     const char *suffix) {
         char buf[100];
-        std::snprintf(buf, sizeof(buf), "/%06llu.%s", static_cast<unsigned long long>(number), suffix);
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "/%06llu.%s",
+                      static_cast<unsigned long long>(number),
+                      suffix);
         return dbname + buf;
     }
 
@@ -69,16 +73,18 @@ namespace leveldb {
         return dbname + "/LOG.old";
     }
 
-// Owned filenames have the form:
-//    dbname/CURRENT
-//    dbname/LOCK
-//    dbname/LOG
-//    dbname/LOG.old
-//    dbname/MANIFEST-[0-9]+
-//    dbname/[0-9]+.(log|sst|ldb)
-    bool ParseFileName(const std::string &filename, uint64_t *number,
+    // Owned filenames have the regexp form:
+    //    dbname/CURRENT
+    //    dbname/LOCK
+    //    dbname/LOG
+    //    dbname/LOG.old
+    //    dbname/MANIFEST-[0-9]+
+    //    dbname/[0-9]+.(log|sst|ldb)
+    bool ParseFileName(const std::string &filename,
+                       uint64_t *number,
                        FileType *type) {
         Slice rest(filename);
+
         if (rest == "CURRENT") {
             *number = 0;
             *type = kCurrentFile;
@@ -118,6 +124,7 @@ namespace leveldb {
             }
             *number = num;
         }
+
         return true;
     }
 

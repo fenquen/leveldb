@@ -600,7 +600,8 @@ namespace leveldb {
                 return ::access(filename.c_str(), F_OK) == 0;
             }
 
-            Status GetChildren(const std::string &directoryPath, std::vector<std::string> *result) override {
+            Status GetChildren(const std::string &directoryPath,
+                               std::vector<std::string> *result) override {
                 result->clear();
 
                 ::DIR *dir = ::opendir(directoryPath.c_str());

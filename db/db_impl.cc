@@ -310,7 +310,7 @@ namespace leveldb {
         mutex_.Lock();
     }
 
-    Status DBImpl::Recover(VersionEdit *edit, bool *save_manifest) {
+    Status DBImpl::Recover(VersionEdit *versionEdit, bool *save_manifest) {
         mutex_.AssertHeld();
 
         // Ignore error from CreateDir since the creation of the DB is
@@ -346,46 +346,63 @@ namespace leveldb {
             return status;
         }
 
-        SequenceNumber max_sequence(0);
+        SequenceNumber maxSequence = 0;
 
         // Recover from all newer log files than the ones named in the
         // descriptor (new log files may have been added by the previous
         // incarnation without registering them in the descriptor).
         //
         // Note that PrevLogNumber() is no longer used, but we pay
-        // attention to it in case we are recovering a database
-        // produced by an older version of leveldb.
-        const uint64_t min_log = versionSet->LogNumber();
-        const uint64_t prev_log = versionSet->PrevLogNumber();
-        std::vector<std::string> filenames;
-        status = env_->GetChildren(dbname_, &filenames);
+        // attention to it in case we are recovering a database produced by an older version of leveldb.
+        std::vector<std::string> childFileNameVec;
+        status = env_->GetChildren(dbname_, &childFileNameVec);
         if (!status.ok()) {
             return status;
         }
-        std::set<uint64_t> expected;
-        versionSet->AddLiveFiles(&expected);
-        uint64_t number;
-        FileType type;
-        std::vector<uint64_t> logs;
-        for (size_t i = 0; i < filenames.size(); i++) {
-            if (ParseFileName(filenames[i], &number, &type)) {
-                expected.erase(number);
-                if (type == kLogFile && ((number >= min_log) || (number == prev_log)))
-                    logs.push_back(number);
+
+        // log是wal log
+        const uint64_t minLogNum = versionSet->LogNumber();
+        const uint64_t prevLogNum = versionSet->PrevLogNumber();
+
+        std::set<uint64_t> missingFileNums;
+        versionSet->AddLiveFiles(&missingFileNums);
+
+        std::vector<uint64_t> logFileNumVec;
+
+        for (auto &childFileName: childFileNameVec) {
+            uint64_t number;
+            FileType fileType;
+            if (ParseFileName(childFileName, &number, &fileType)) {
+                missingFileNums.erase(number);
+
+                if (fileType == kLogFile && ((number >= minLogNum) || (number == prevLogNum))) {
+                    logFileNumVec.push_back(number);
+                }
             }
         }
-        if (!expected.empty()) {
+
+        // 有缺少的
+        if (!missingFileNums.empty()) {
             char buf[50];
-            std::snprintf(buf, sizeof(buf), "%d missing files; e.g.",
-                          static_cast<int>(expected.size()));
-            return Status::Corruption(buf, TableFileName(dbname_, *(expected.begin())));
+            std::snprintf(buf,
+                          sizeof(buf),
+                          "%d missing files; e.g.",
+                          static_cast<int>(missingFileNums.size()));
+
+            return Status::Corruption(buf, TableFileName(dbname_, *(missingFileNums.begin())));
         }
 
-        // Recover in the order in which the logs were generated
-        std::sort(logs.begin(), logs.end());
-        for (size_t i = 0; i < logs.size(); i++) {
-            status = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
-                                    &max_sequence);
+        // 依log的顺序recover
+        std::sort(logFileNumVec.begin(), logFileNumVec.end());
+
+        // 挨个应用 wal
+        for (size_t i = 0; i < logFileNumVec.size(); i++) {
+            status = RecoverLogFile(logFileNumVec[i],
+                                    (i == logFileNumVec.size() - 1),
+                                    save_manifest,
+                                    versionEdit,
+                                    &maxSequence);
+
             if (!status.ok()) {
                 return status;
             }
@@ -393,24 +410,28 @@ namespace leveldb {
             // The previous incarnation may not have written any MANIFEST
             // records after allocating this log number.  So we manually
             // update the file number allocation counter in VersionSet.
-            versionSet->MarkFileNumberUsed(logs[i]);
+            versionSet->MarkFileNumberUsed(logFileNumVec[i]);
         }
 
-        if (versionSet->LastSequence() < max_sequence) {
-            versionSet->SetLastSequence(max_sequence);
+        if (versionSet->LastSequence() < maxSequence) {
+            versionSet->SetLastSequence(maxSequence);
         }
 
         return Status::OK();
     }
 
-    Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
-                                  bool *save_manifest, VersionEdit *edit,
-                                  SequenceNumber *max_sequence) {
+    Status DBImpl::RecoverLogFile(uint64_t logNumber,
+                                  bool lastLog,
+                                  bool *save_manifest,
+                                  VersionEdit *versionEdit,
+                                  SequenceNumber *maxSequence) {
+
         struct LogReporter : public log::Reader::Reporter {
             Env *env;
             Logger *info_log;
             const char *fname;
             Status *status;  // null if options_.paranoid_checks==false
+
             void Corruption(size_t bytes, const Status &s) override {
                 Log(info_log, "%s%s: dropping %d bytes; %s",
                     (this->status == nullptr ? "(ignoring error) " : ""), fname,
@@ -421,103 +442,117 @@ namespace leveldb {
 
         mutex_.AssertHeld();
 
-        // Open the log file
-        std::string fname = LogFileName(dbname_, log_number);
-        SequentialFile *file;
-        Status status = env_->NewSequentialFile(fname, &file);
+        // open the log file
+        // dbname/number.log
+        std::string logFilePath = LogFileName(dbname_, logNumber);
+
+        SequentialFile *logFileSequential;
+        Status status = env_->NewSequentialFile(logFilePath, &logFileSequential);
         if (!status.ok()) {
             MaybeIgnoreError(&status);
             return status;
         }
 
-        // Create the log reader.
-        LogReporter reporter;
-        reporter.env = env_;
-        reporter.info_log = options_.logger;
-        reporter.fname = fname.c_str();
-        reporter.status = (options_.paranoid_checks ? &status : nullptr);
+        LogReporter logReporter;
+        logReporter.env = env_;
+        logReporter.info_log = options_.logger;
+        logReporter.fname = logFilePath.c_str();
+        logReporter.status = (options_.paranoid_checks ? &status : nullptr);
+
         // We intentionally make log::Reader do checksumming even if
         // paranoid_checks==false so that corruptions cause entire commits
         // to be skipped instead of propagating bad information (like overly
         // large sequence numbers).
-        log::Reader reader(file, &reporter, true /*checksum*/, 0 /*initial_offset*/);
-        Log(options_.logger, "Recovering log #%llu",
-            (unsigned long long) log_number);
+        log::Reader logFileReader(logFileSequential,
+                                  &logReporter,
+                                  true,
+                                  0);
+        Log(options_.logger,
+            "Recovering log #%llu", (unsigned long long) logNumber);
 
         // Read all the records and add to a memtable
         std::string scratch;
-        Slice record;
-        WriteBatch batch;
+        Slice dest;
+        WriteBatch writeBatch;
         int compactions = 0;
-        MemTable *mem = nullptr;
-        while (reader.ReadRecord(&record, &scratch) && status.ok()) {
-            if (record.size() < 12) {
-                reporter.Corruption(record.size(),
-                                    Status::Corruption("log record too small"));
+        MemTable *memTable = nullptr;
+
+        while (logFileReader.ReadRecord(&dest, &scratch) && status.ok()) {
+            if (dest.size() < 12) {
+                logReporter.Corruption(dest.size(), Status::Corruption("log dest too small"));
                 continue;
             }
-            WriteBatchInternal::SetContents(&batch, record);
 
-            if (mem == nullptr) {
-                mem = new MemTable(internal_comparator_);
-                mem->Ref();
+            WriteBatchInternal::SetContents(&writeBatch, dest);
+
+            if (memTable == nullptr) {
+                memTable = new MemTable(internal_comparator_);
+                memTable->Ref();
             }
-            status = WriteBatchInternal::InsertInto(&batch, mem);
+
+            // 把 writeBatch内容 insert到 memTable
+            status = WriteBatchInternal::InsertInto(&writeBatch, memTable);
             MaybeIgnoreError(&status);
             if (!status.ok()) {
                 break;
             }
-            const SequenceNumber last_seq = WriteBatchInternal::Sequence(&batch) +
-                                            WriteBatchInternal::Count(&batch) - 1;
-            if (last_seq > *max_sequence) {
-                *max_sequence = last_seq;
+
+            const SequenceNumber lastSeq = WriteBatchInternal::Sequence(&writeBatch) +
+                                           WriteBatchInternal::Count(&writeBatch) - 1;
+            if (lastSeq > *maxSequence) {
+                *maxSequence = lastSeq;
             }
 
-            if (mem->ApproximateMemoryUsage() > options_.writeBufferSize) {
+            // 越过了buffer大小 要落地了
+            if (memTable->ApproximateMemoryUsage() > options_.writeBufferSize) {
                 compactions++;
                 *save_manifest = true;
-                status = WriteLevel0Table(mem, edit, nullptr);
-                mem->Unref();
-                mem = nullptr;
+                status = WriteLevel0Table(memTable, versionEdit, nullptr);
+                memTable->Unref();
+                memTable = nullptr;
                 if (!status.ok()) {
                     // Reflect errors immediately so that conditions like full
-                    // file-systems cause the DB::Open() to fail.
+                    // logFileSequential-systems cause the DB::Open() to fail.
                     break;
                 }
             }
         }
 
-        delete file;
+        delete logFileSequential;
 
-        // See if we should keep reusing the last log file.
-        if (status.ok() && options_.reuseLogs && last_log && compactions == 0) {
+        // See if we should keep reusing the last log logFileSequential.
+        if (status.ok() && options_.reuseLogs && lastLog && compactions == 0) {
             assert(logfile_ == nullptr);
             assert(log_ == nullptr);
             assert(mem_ == nullptr);
+
             uint64_t lfile_size;
-            if (env_->GetFileSize(fname, &lfile_size).ok() &&
-                env_->NewAppendableFile(fname, &logfile_).ok()) {
-                Log(options_.logger, "Reusing old log %s \n", fname.c_str());
+
+            if (env_->GetFileSize(logFilePath, &lfile_size).ok() &&
+                env_->NewAppendableFile(logFilePath, &logfile_).ok()) {
+
+                Log(options_.logger, "Reusing old log %s \n", logFilePath.c_str());
+
                 log_ = new log::Writer(logfile_, lfile_size);
-                logfile_number_ = log_number;
-                if (mem != nullptr) {
-                    mem_ = mem;
-                    mem = nullptr;
+                logfile_number_ = logNumber;
+                if (memTable != nullptr) {
+                    mem_ = memTable;
+                    memTable = nullptr;
                 } else {
-                    // mem can be nullptr if lognum exists but was empty.
+                    // memTable can be nullptr if lognum exists but was empty.
                     mem_ = new MemTable(internal_comparator_);
                     mem_->Ref();
                 }
             }
         }
 
-        if (mem != nullptr) {
-            // mem did not get reused; compact it.
+        if (memTable != nullptr) {
+            // memTable did not get reused; compact it.
             if (status.ok()) {
                 *save_manifest = true;
-                status = WriteLevel0Table(mem, edit, nullptr);
+                status = WriteLevel0Table(memTable, versionEdit, nullptr);
             }
-            mem->Unref();
+            memTable->Unref();
         }
 
         return status;
@@ -1245,7 +1280,7 @@ namespace leveldb {
             // Add to log and apply to memtable.  We can release the lock
             // during this phase since &w is currently responsible for logging
             // and protects against concurrent loggers and concurrent writes
-            // into mem_.
+            // into memTable.
             {
                 mutex_.Unlock();
                 status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
