@@ -35,7 +35,7 @@ class LEVELDB_EXPORT FilterPolicy {
   virtual const char* Name() const = 0;
 
   // keys[0,n-1] contains a list of keys (potentially with duplicates)
-  // that are ordered according to the user supplied comparator.
+  // that are ordered according to the user supplied internalKeyComparator.
   // Append a filter that summarizes keys[0,n-1] to *dst.
   //
   // Warning: do not change the initial contents of *dst.  Instead,
@@ -58,10 +58,10 @@ class LEVELDB_EXPORT FilterPolicy {
 // Callers must delete the result after any database that is using the
 // result has been closed.
 //
-// Note: if you are using a custom comparator that ignores some parts
+// Note: if you are using a custom internalKeyComparator that ignores some parts
 // of the keys being compared, you must not use NewBloomFilterPolicy()
 // and must provide your own FilterPolicy that also ignores the
-// corresponding parts of the keys.  For example, if the comparator
+// corresponding parts of the keys.  For example, if the internalKeyComparator
 // ignores trailing spaces, it would be incorrect to use a
 // FilterPolicy (like NewBloomFilterPolicy) that does not ignore
 // trailing spaces in keys.

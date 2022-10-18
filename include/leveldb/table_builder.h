@@ -30,9 +30,9 @@ namespace leveldb {
     class LEVELDB_EXPORT TableBuilder {
     public:
         // Create a builder that will store the contents of the table it is
-        // building in *file.  Does not close the file.  It is up to the
-        // caller to close the file after calling Finish().
-        TableBuilder(const Options &options, WritableFile *file);
+        // building in *writableFile.  Does not close the writableFile.  It is up to the
+        // caller to close the writableFile after calling Finish().
+        TableBuilder(const Options &options, WritableFile *writableFile);
 
         TableBuilder(const TableBuilder &) = delete;
 
@@ -50,7 +50,7 @@ namespace leveldb {
         Status ChangeOptions(const Options &options);
 
         // Add key,value to the table being constructed.
-        // REQUIRES: key is after any previously added key according to comparator.
+        // REQUIRES: key is after any previously added key according to internalKeyComparator.
         // REQUIRES: Finish(), Abandon() have not been called
         void Add(const Slice &key, const Slice &value);
 

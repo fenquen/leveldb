@@ -14,69 +14,80 @@
 
 namespace leveldb {
 
-Status BuildTable(const std::string& dbname, Env* env, const Options& options,
-                  TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
-  Status s;
-  meta->file_size = 0;
-  iter->SeekToFirst();
+    // 生成sst
+    Status BuildTable(const std::string &dbname,
+                      Env *env,
+                      const Options &options,
+                      TableCache *tableCache,
+                      Iterator *iterator,
+                      FileMetaData *fileMetaData) {
+        fileMetaData->file_size = 0;
+        iterator->SeekToFirst();
+        std::string ldbFileName = TableFileName(dbname, fileMetaData->number);
 
-  std::string fname = TableFileName(dbname, meta->number);
-  if (iter->Valid()) {
-    WritableFile* file;
-    s = env->NewWritableFile(fname, &file);
-    if (!s.ok()) {
-      return s;
+        Status status;
+        if (iterator->Valid()) {
+            WritableFile *ldbFile;
+            status = env->NewWritableFile(ldbFileName, &ldbFile);
+            if (!status.ok()) {
+                return status;
+            }
+
+            auto *tableBuilder = new TableBuilder(options, ldbFile);
+            fileMetaData->smallest.DecodeFrom(iterator->key());
+
+            // 遍历
+            Slice key;
+            for (; iterator->Valid(); iterator->Next()) {
+                key = iterator->key();
+                tableBuilder->Add(key, iterator->value());
+            }
+
+            if (!key.empty()) {
+                fileMetaData->largest.DecodeFrom(key);
+            }
+
+            // Finish and check for tableBuilder errors
+            status = tableBuilder->Finish();
+            if (status.ok()) {
+                fileMetaData->file_size = tableBuilder->FileSize();
+                assert(fileMetaData->file_size > 0);
+            }
+
+            delete tableBuilder;
+
+            // Finish and check for ldbFile errors
+            if (status.ok()) {
+                status = ldbFile->Sync();
+            }
+            if (status.ok()) {
+                status = ldbFile->Close();
+            }
+            delete ldbFile;
+            ldbFile = nullptr;
+
+            if (status.ok()) {
+                // Verify that the table is usable
+                Iterator *it = tableCache->NewIterator(ReadOptions(),
+                                                       fileMetaData->number,
+                                                       fileMetaData->file_size);
+                status = it->status();
+                delete it;
+            }
+        }
+
+        // Check for input iterator errors
+        if (!iterator->status().ok()) {
+            status = iterator->status();
+        }
+
+        if (status.ok() && fileMetaData->file_size > 0) {
+            // Keep it
+        } else {
+            env->RemoveFile(ldbFileName);
+        }
+
+        return status;
     }
 
-    TableBuilder* builder = new TableBuilder(options, file);
-    meta->smallest.DecodeFrom(iter->key());
-    Slice key;
-    for (; iter->Valid(); iter->Next()) {
-      key = iter->key();
-      builder->Add(key, iter->value());
-    }
-    if (!key.empty()) {
-      meta->largest.DecodeFrom(key);
-    }
-
-    // Finish and check for builder errors
-    s = builder->Finish();
-    if (s.ok()) {
-      meta->file_size = builder->FileSize();
-      assert(meta->file_size > 0);
-    }
-    delete builder;
-
-    // Finish and check for file errors
-    if (s.ok()) {
-      s = file->Sync();
-    }
-    if (s.ok()) {
-      s = file->Close();
-    }
-    delete file;
-    file = nullptr;
-
-    if (s.ok()) {
-      // Verify that the table is usable
-      Iterator* it = table_cache->NewIterator(ReadOptions(), meta->number,
-                                              meta->file_size);
-      s = it->status();
-      delete it;
-    }
-  }
-
-  // Check for input iterator errors
-  if (!iter->status().ok()) {
-    s = iter->status();
-  }
-
-  if (s.ok() && meta->file_size > 0) {
-    // Keep it
-  } else {
-    env->RemoveFile(fname);
-  }
-  return s;
 }
-
-}  // namespace leveldb

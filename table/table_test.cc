@@ -74,7 +74,7 @@ static void Increment(const Comparator* cmp, std::string* key) {
   }
 }
 
-// An STL comparator that uses a Comparator
+// An STL internalKeyComparator that uses a Comparator
 namespace {
 struct STLLessThan {
   const Comparator* cmp;
@@ -284,7 +284,7 @@ class KeyConvertingIterator : public Iterator {
       status_ = Status::Corruption("malformed internal key");
       return Slice("corrupted key");
     }
-    return key.user_key;
+    return key.userKey;
   }
 
   Slice value() const override { return iter_->value(); }
@@ -684,7 +684,7 @@ TEST_F(Harness, Randomized) {
     for (int num_entries = 0; num_entries < 2000;
          num_entries += (num_entries < 50 ? 1 : 200)) {
       if ((num_entries % 10) == 0) {
-        std::fprintf(stderr, "case %d of %d: num_entries = %d\n", (i + 1),
+        std::fprintf(stderr, "case %d of %d: numEntries = %d\n", (i + 1),
                      int(kNumTestArgs), num_entries);
       }
       for (int e = 0; e < num_entries; e++) {

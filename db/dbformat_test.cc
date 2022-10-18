@@ -35,7 +35,7 @@ static void TestKey(const std::string& key, uint64_t seq, ValueType vt) {
   ParsedInternalKey decoded("", 0, kTypeValue);
 
   ASSERT_TRUE(ParseInternalKey(in, &decoded));
-  ASSERT_EQ(key, decoded.user_key.ToString());
+  ASSERT_EQ(key, decoded.userKey.ToString());
   ASSERT_EQ(seq, decoded.sequence);
   ASSERT_EQ(vt, decoded.type);
 

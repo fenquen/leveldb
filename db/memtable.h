@@ -22,7 +22,7 @@ namespace leveldb {
     public:
         // MemTables are reference counted.  The initial reference count
         // is zero and the caller must call Ref() at least once.
-        explicit MemTable(const InternalKeyComparator &comparator);
+        explicit MemTable(const InternalKeyComparator &internalKeyComparator);
 
         MemTable(const MemTable &) = delete;
 
@@ -72,9 +72,9 @@ namespace leveldb {
         friend class MemTableBackwardIterator;
 
         struct KeyComparator {
-            const InternalKeyComparator comparator;
+            const InternalKeyComparator internalKeyComparator;
 
-            explicit KeyComparator(const InternalKeyComparator &c) : comparator(c) {}
+            explicit KeyComparator(const InternalKeyComparator &c) : internalKeyComparator(c) {}
 
             int operator()(const char *a, const char *b) const;
         };
@@ -83,10 +83,10 @@ namespace leveldb {
 
         ~MemTable();  // private since only Unref() should be used to delete it
 
-        KeyComparator comparator_;
+        KeyComparator keyComparator;
         int refs_;
-        Arena arena_;
-        Table table_;
+        Arena arena;
+        Table table;
     };
 
 }  // namespace leveldb

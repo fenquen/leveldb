@@ -25,7 +25,7 @@ static std::string PrintContents(WriteBatch* b) {
     switch (ikey.type) {
       case kTypeValue:
         state.append("Put(");
-        state.append(ikey.user_key.ToString());
+        state.append(ikey.userKey.ToString());
         state.append(", ");
         state.append(iter->value().ToString());
         state.append(")");
@@ -33,7 +33,7 @@ static std::string PrintContents(WriteBatch* b) {
         break;
       case kTypeDeletion:
         state.append("Delete(");
-        state.append(ikey.user_key.ToString());
+        state.append(ikey.userKey.ToString());
         state.append(")");
         count++;
         break;

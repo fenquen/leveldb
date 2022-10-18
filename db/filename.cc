@@ -13,7 +13,6 @@
 
 namespace leveldb {
 
-// A utility routine: write "data" to the named file and Sync() it.
     Status WriteStringToFileSync(Env *env, const Slice &data,
                                  const std::string &fname);
 
@@ -48,7 +47,10 @@ namespace leveldb {
     std::string DescriptorFileName(const std::string &dbname, uint64_t number) {
         assert(number > 0);
         char buf[100];
-        std::snprintf(buf, sizeof(buf), "/MANIFEST-%06llu", static_cast<unsigned long long>(number));
+        std::snprintf(buf,
+                      sizeof(buf),
+                      "/MANIFEST-%06llu",
+                      static_cast<unsigned long long>(number));
         return dbname + buf;
     }
 
@@ -68,7 +70,6 @@ namespace leveldb {
         return dbname + "/LOG";
     }
 
-// Return the name of the old info log file for "dbname".
     std::string OldInfoLogFileName(const std::string &dbname) {
         return dbname + "/LOG.old";
     }

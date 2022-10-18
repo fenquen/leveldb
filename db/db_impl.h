@@ -45,7 +45,7 @@ namespace leveldb {
 
         Status Delete(const WriteOptions &, const Slice &key) override;
 
-        Status Write(const WriteOptions &options, WriteBatch *updates) override;
+        Status Write(const WriteOptions &writeOptions, WriteBatch *writeBatch) override;
 
         Status Get(const ReadOptions &options, const Slice &key, std::string *value) override;
 
@@ -98,7 +98,7 @@ namespace leveldb {
             InternalKey tmp_storage;   // Used to keep track of compaction progress
         };
 
-        // Per level compaction stats.  stats_[level] stores the stats for
+        // Per level compaction stats.  compactionStatArr[level] stores the stats for
         // compactions that produced data for the specified "level".
         struct CompactionStats {
             CompactionStats() : micros(0), bytes_read(0), bytes_written(0) {}
@@ -124,53 +124,52 @@ namespace leveldb {
         // amount of work to recover recently logged updates.  Any changes to
         // be made to the descriptor are added to *versionEdit.
         Status Recover(VersionEdit *versionEdit, bool *save_manifest)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         void MaybeIgnoreError(Status *s) const;
 
         // Delete any unneeded files and stale in-memory entries.
-        void RemoveObsoleteFiles() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        void RemoveObsoleteFiles() EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         // Compact the in-memory write buffer to disk.  Switches to a new
         // log-file/memtable and writes a new descriptor iff successful.
         // Errors are recorded in bg_error_.
-        void CompactMemTable() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        void CompactMemTable() EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status RecoverLogFile(uint64_t logNumber, bool lastLog, bool *save_manifest,
                               VersionEdit *versionEdit, SequenceNumber *maxSequence)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        Status WriteLevel0Table(MemTable *mem, VersionEdit *edit, Version *base)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        Status WriteLevel0Table(MemTable *memTable, VersionEdit *edit, Version *base)
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status MakeRoomForWrite(bool force /* compact even if there is room? */)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         WriteBatch *BuildBatchGroup(Writer **last_writer)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         void RecordBackgroundError(const Status &s);
 
-        void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         static void BGWork(void *db);
 
         void BackgroundCall();
 
-        void BackgroundCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        void BackgroundCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        void CleanupCompaction(CompactionState *compact)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        void CleanupCompaction(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status DoCompactionWork(CompactionState *compact)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status OpenCompactionOutputFile(CompactionState *compact);
 
         Status FinishCompactionOutputFile(CompactionState *compact, Iterator *input);
 
         Status InstallCompactionResults(CompactionState *compact)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+        EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         const Comparator *user_comparator() const {
             return internal_comparator_.user_comparator();
@@ -180,54 +179,52 @@ namespace leveldb {
         Env *const env_;
         const InternalKeyComparator internal_comparator_;
         const InternalFilterPolicy internal_filter_policy_;
-        const Options options_;  // options_.comparator == &internal_comparator_
+        const Options options_;  // options_.internalKeyComparator == &internal_comparator_
         const bool owns_info_log_;
         const bool owns_cache_;
         const std::string dbname_; // 是dir的path
 
-        // table_cache_ provides its own synchronization
-        TableCache *const table_cache_;
+        // tableCache provides its own synchronization
+        TableCache *const tableCache;
 
         // Lock over the persistent DB state.  Non-null iff successfully acquired.
         FileLock *db_lock_;
 
-        // State below is protected by mutex_
-        port::Mutex mutex_;
+        // below is protected by mutex
+        port::Mutex mutex;
         std::atomic<bool> shutting_down_;
-        port::CondVar background_work_finished_signal_ GUARDED_BY(mutex_);
-        MemTable *mem_;
-        MemTable *imm_ GUARDED_BY(mutex_);  // Memtable being compacted
-        std::atomic<bool> has_imm_;         // So bg thread can detect non-null imm_
+        port::CondVar background_work_finished_signal_ GUARDED_BY(mutex);
+        MemTable *memTable;
+        MemTable *immutableMemTable GUARDED_BY(mutex);  // Memtable being compacted
+        std::atomic<bool> has_imm_;         // So bg thread can detect non-null immutableMemTable
         WritableFile *logfile_;
-        uint64_t logfile_number_ GUARDED_BY(mutex_);
+        uint64_t logfile_number_ GUARDED_BY(mutex);
         log::Writer *log_;
-        uint32_t seed_ GUARDED_BY(mutex_);  // For sampling.
+        uint32_t seed_ GUARDED_BY(mutex);  // For sampling.
 
         // Queue of writers.
-        std::deque<Writer *> writers_ GUARDED_BY(mutex_);
-        WriteBatch *tmp_batch_ GUARDED_BY(mutex_);
+        std::deque<Writer *> writerDeque GUARDED_BY(mutex);
+        WriteBatch *tmp_batch_ GUARDED_BY(mutex);
 
-        SnapshotList snapshots_ GUARDED_BY(mutex_);
+        SnapshotList snapshots_ GUARDED_BY(mutex);
 
-        // Set of table files to protect from deletion because they are
-        // part of ongoing compactions.
-        std::set<uint64_t> pending_outputs_ GUARDED_BY(mutex_);
+        // Set of table files to protect from deletion because they are part of ongoing compactions.
+        std::set<uint64_t> pendingOutputFileNumberArr GUARDED_BY(mutex);
 
         // Has a background compaction been scheduled or is running?
-        bool background_compaction_scheduled_ GUARDED_BY(mutex_);
+        bool background_compaction_scheduled_ GUARDED_BY(mutex);
 
-        ManualCompaction *manual_compaction_ GUARDED_BY(mutex_);
+        ManualCompaction *manual_compaction_ GUARDED_BY(mutex);
 
-        VersionSet *const versionSet GUARDED_BY(mutex_);
+        VersionSet *const versionSet GUARDED_BY(mutex);
 
         // Have we encountered a background error in paranoid mode?
-        Status bg_error_ GUARDED_BY(mutex_);
+        Status bg_error_ GUARDED_BY(mutex);
 
-        CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
+        CompactionStats compactionStatArr[config::kNumLevels] GUARDED_BY(mutex);
     };
 
-// Sanitize db options.  The caller should delete result.logger if
-// it is not equal to src.logger.
+    // Sanitize db options.  The caller should delete result.logger if it is not equal to src.logger.
     Options SanitizeOptions(const std::string &db,
                             const InternalKeyComparator *icmp,
                             const InternalFilterPolicy *ipolicy,

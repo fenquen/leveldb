@@ -39,23 +39,23 @@ namespace leveldb {
 
     namespace {
 
-// Set by EnvPosixTestHelper::SetReadOnlyMMapLimit() and MaxOpenFiles().
+        // Set by EnvPosixTestHelper::SetReadOnlyMMapLimit() and MaxOpenFiles().
         int g_open_read_only_file_limit = -1;
 
-// Up to 1000 mmap regions for 64-bit binaries; none for 32-bit.
+        // Up to 1000 mmap regions for 64-bit binaries; none for 32-bit.
         constexpr const int kDefaultMmapLimit = (sizeof(void *) >= 8) ? 1000 : 0;
 
-// Can be set using EnvPosixTestHelper::SetReadOnlyMMapLimit().
+        // Can be set using EnvPosixTestHelper::SetReadOnlyMMapLimit().
         int g_mmap_limit = kDefaultMmapLimit;
 
-// Common flags defined for all posix open operations
+        // Common flags defined for all posix open operations
 #if defined(HAVE_O_CLOEXEC)
         constexpr const int kOpenBaseFlags = O_CLOEXEC;
 #else
         constexpr const int kOpenBaseFlags = 0;
-#endif  // defined(HAVE_O_CLOEXEC)
+#endif
 
-        constexpr const size_t kWritableFileBufferSize = 65536;
+        constexpr const size_t WRITABLE_FILE_BUFFER_SIZE = 65536;
 
         Status PosixError(const std::string &context, int error_number) {
             if (error_number == ENOENT) {
@@ -65,14 +65,14 @@ namespace leveldb {
             return Status::IOError(context, std::strerror(error_number));
         }
 
-// Helper class to limit resource usage to avoid exhaustion.
-// Currently used to limit read-only file descriptors and mmap file usage
-// so that we do not run out of file descriptors or virtual memory, or run into
-// kernel performance problems for very large databases.
+        // Helper class to limit resource usage to avoid exhaustion.
+        // Currently used to limit read-only file descriptors and mmap file usage
+        // so that we do not run out of file descriptors or virtual memory, or run into
+        // kernel performance problems for very large databases.
         class Limiter {
         public:
             // Limit maximum number of resources to |max_acquires|.
-            Limiter(int max_acquires) : acquires_allowed_(max_acquires) {}
+            explicit Limiter(int max_acquires) : acquires_allowed_(max_acquires) {}
 
             Limiter(const Limiter &) = delete;
 
@@ -279,7 +279,7 @@ namespace leveldb {
                 const char *write_data = data.data();
 
                 // Fit as much as possible into buffer.
-                size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
+                size_t copy_size = std::min(write_size, WRITABLE_FILE_BUFFER_SIZE - pos_);
                 std::memcpy(buf_ + pos_, write_data, copy_size);
                 write_data += copy_size;
                 write_size -= copy_size;
@@ -295,7 +295,7 @@ namespace leveldb {
                 }
 
                 // Small writes go to buffer, large writes are written directly.
-                if (write_size < kWritableFileBufferSize) {
+                if (write_size < WRITABLE_FILE_BUFFER_SIZE) {
                     std::memcpy(buf_, write_data, write_size);
                     pos_ = write_size;
                     return Status::OK();
@@ -447,7 +447,7 @@ namespace leveldb {
             }
 
             // buf_[0, pos_ - 1] contains data to be written to fd.
-            char buf_[kWritableFileBufferSize];
+            char buf_[WRITABLE_FILE_BUFFER_SIZE];
             size_t pos_;
             int fd_;
 
@@ -741,7 +741,7 @@ namespace leveldb {
 
             uint64_t NowMicros() override {
                 static constexpr uint64_t kUsecondsPerSecond = 1000000;
-                struct ::timeval tv;
+                struct ::timeval tv{};
                 ::gettimeofday(&tv, nullptr);
                 return static_cast<uint64_t>(tv.tv_sec) * kUsecondsPerSecond + tv.tv_usec;
             }

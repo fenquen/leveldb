@@ -42,11 +42,11 @@ namespace leveldb {
         // Parameters that affect behavior
 
         // Comparator used to define the order of keys in the table.
-        // Default: a comparator that uses lexicographic byte-wise ordering
+        // Default: a internalKeyComparator that uses lexicographic byte-wise ordering
         //
-        // REQUIRES: The client must ensure that the comparator supplied
+        // REQUIRES: The client must ensure that the internalKeyComparator supplied
         // here has the same name and orders keys *exactly* the same as the
-        // comparator provided to previous open calls on the same DB.
+        // internalKeyComparator provided to previous open calls on the same DB.
         const Comparator *comparator;
 
         // If true, the database will be created if it is missing.
@@ -169,6 +169,7 @@ namespace leveldb {
     struct LEVELDB_EXPORT WriteOptions {
         WriteOptions() = default;
 
+        // 要不要在写了wal之后立即对该文件sync
         // If true, the write will be flushed from the operating system
         // buffer cache (by calling WritableFile::Sync()) before the write
         // is considered complete.  If this flag is true, writes will be

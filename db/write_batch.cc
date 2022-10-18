@@ -1,17 +1,6 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
-//
-// WriteBatch::rep_ :=
-//    sequence: fixed64
-//    count: fixed32
-//    data: record[count]
-// record :=
-//    kTypeValue varstring varstring         |
-//    kTypeDeletion varstring
-// varstring :=
-//    len: varint32
-//    data: uint8[len]
 
 #include "leveldb/write_batch.h"
 
@@ -82,6 +71,7 @@ namespace leveldb {
         return Status::OK();
     }
 
+    // 由 writeBatch数据的格式可知 大头的8字节后边的4字节是
     int WriteBatchInternal::Count(const WriteBatch *writeBatch) {
         return DecodeFixed32(writeBatch->rep_.data() + 8);
     }
@@ -90,6 +80,7 @@ namespace leveldb {
         EncodeFixed32(&b->rep_[8], n);
     }
 
+    // 由 writeBatch数据的格式可知 大头的8字节是sequence
     SequenceNumber WriteBatchInternal::Sequence(const WriteBatch *writeBatch) {
         return SequenceNumber(DecodeFixed64(writeBatch->rep_.data()));
     }
@@ -133,6 +124,7 @@ namespace leveldb {
         };
     }  // namespace
 
+    // 用 writeBatch内容 insert到 memTable
     Status WriteBatchInternal::InsertInto(const WriteBatch *writeBatch, MemTable *memtable) {
         MemTableInserter memTableInserter;
         memTableInserter.sequenceNumber = WriteBatchInternal::Sequence(writeBatch);

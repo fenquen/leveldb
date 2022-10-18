@@ -194,7 +194,7 @@ namespace leveldb {
             // Initialized before use.
             size_t capacity_;
 
-            // mutex_ protects the following state.
+            // mutex protects the following state.
             mutable port::Mutex mutex_;
             size_t usage_ GUARDED_BY(mutex_);
 

@@ -41,14 +41,16 @@ namespace leveldb {
 
 // Information kept for every waiting writer
     struct DBImpl::Writer {
-        explicit Writer(port::Mutex *mu)
-                : batch(nullptr), sync(false), done(false), cv(mu) {}
+        explicit Writer(port::Mutex *mutex) : batch(nullptr),
+                                              sync(false),
+                                              done(false),
+                                              condVar(mutex) {}
 
         Status status;
         WriteBatch *batch;
         bool sync;
         bool done;
-        port::CondVar cv;
+        port::CondVar condVar;
     };
 
     struct DBImpl::CompactionState {
@@ -139,14 +141,14 @@ namespace leveldb {
               owns_info_log_(options_.logger != raw_options.logger),
               owns_cache_(options_.blockCache != raw_options.blockCache),
               dbname_(dbname),
-              table_cache_(new TableCache(dbname_,
-                                          options_,
-                                          TableCacheSize(options_))),
+              tableCache(new TableCache(dbname_,
+                                        options_,
+                                        TableCacheSize(options_))),
               db_lock_(nullptr),
               shutting_down_(false),
-              background_work_finished_signal_(&mutex_),
-              mem_(nullptr),
-              imm_(nullptr),
+              background_work_finished_signal_(&mutex),
+              memTable(nullptr),
+              immutableMemTable(nullptr),
               has_imm_(false),
               logfile_(nullptr),
               logfile_number_(0),
@@ -157,29 +159,29 @@ namespace leveldb {
               manual_compaction_(nullptr),
               versionSet(new VersionSet(dbname_,
                                         &options_,
-                                        table_cache_,
+                                        tableCache,
                                         &internal_comparator_)) {}
 
     DBImpl::~DBImpl() {
         // Wait for background work to finish.
-        mutex_.Lock();
+        mutex.Lock();
         shutting_down_.store(true, std::memory_order_release);
         while (background_compaction_scheduled_) {
             background_work_finished_signal_.Wait();
         }
-        mutex_.Unlock();
+        mutex.Unlock();
 
         if (db_lock_ != nullptr) {
             env_->UnlockFile(db_lock_);
         }
 
         delete versionSet;
-        if (mem_ != nullptr) mem_->Unref();
-        if (imm_ != nullptr) imm_->Unref();
+        if (memTable != nullptr) memTable->Unref();
+        if (immutableMemTable != nullptr) immutableMemTable->Unref();
         delete tmp_batch_;
         delete log_;
         delete logfile_;
-        delete table_cache_;
+        delete tableCache;
 
         if (owns_info_log_) {
             delete options_.logger;
@@ -244,7 +246,7 @@ namespace leveldb {
     }
 
     void DBImpl::RemoveObsoleteFiles() {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
 
         if (!bg_error_.ok()) {
             // After a background error, we don't know whether a new version may
@@ -253,7 +255,7 @@ namespace leveldb {
         }
 
         // Make a set of all of the live files
-        std::set<uint64_t> live = pending_outputs_;
+        std::set<uint64_t> live = pendingOutputFileNumberArr;
         versionSet->AddLiveFiles(&live);
 
         std::vector<std::string> filenames;
@@ -279,7 +281,7 @@ namespace leveldb {
                         break;
                     case kTempFile:
                         // Any temp files that are currently being written to must
-                        // be recorded in pending_outputs_, which is inserted into "live"
+                        // be recorded in pendingOutputFileNumberArr, which is inserted into "live"
                         keep = (live.find(number) != live.end());
                         break;
                     case kCurrentFile:
@@ -292,7 +294,7 @@ namespace leveldb {
                 if (!keep) {
                     files_to_delete.push_back(std::move(filename));
                     if (type == kTableFile) {
-                        table_cache_->Evict(number);
+                        tableCache->Evict(number);
                     }
                     Log(options_.logger, "Delete type=%d #%lld\n", static_cast<int>(type),
                         static_cast<unsigned long long>(number));
@@ -303,15 +305,15 @@ namespace leveldb {
         // While deleting all files unblock other threads. All files being deleted
         // have unique names which will not collide with newly created files and
         // are therefore safe to delete while allowing other threads to proceed.
-        mutex_.Unlock();
+        mutex.Unlock();
         for (const std::string &filename: files_to_delete) {
             env_->RemoveFile(dbname_ + "/" + filename);
         }
-        mutex_.Lock();
+        mutex.Lock();
     }
 
     Status DBImpl::Recover(VersionEdit *versionEdit, bool *save_manifest) {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
 
         // Ignore error from CreateDir since the creation of the DB is
         // committed only when the descriptor is created, and this directory
@@ -440,7 +442,7 @@ namespace leveldb {
             }
         };
 
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
 
         // open the log file
         // dbname/number.log
@@ -467,8 +469,10 @@ namespace leveldb {
                                   &logReporter,
                                   true,
                                   0);
+
         Log(options_.logger,
-            "Recovering log #%llu", (unsigned long long) logNumber);
+            "Recovering log #%llu",
+            (unsigned long long) logNumber);
 
         // Read all the records and add to a memtable
         std::string scratch;
@@ -510,6 +514,7 @@ namespace leveldb {
                 status = WriteLevel0Table(memTable, versionEdit, nullptr);
                 memTable->Unref();
                 memTable = nullptr;
+
                 if (!status.ok()) {
                     // Reflect errors immediately so that conditions like full
                     // logFileSequential-systems cause the DB::Open() to fail.
@@ -524,7 +529,7 @@ namespace leveldb {
         if (status.ok() && options_.reuseLogs && lastLog && compactions == 0) {
             assert(logfile_ == nullptr);
             assert(log_ == nullptr);
-            assert(mem_ == nullptr);
+            assert(memTable == nullptr);
 
             uint64_t lfile_size;
 
@@ -536,12 +541,12 @@ namespace leveldb {
                 log_ = new log::Writer(logfile_, lfile_size);
                 logfile_number_ = logNumber;
                 if (memTable != nullptr) {
-                    mem_ = memTable;
+                    memTable = memTable;
                     memTable = nullptr;
                 } else {
                     // memTable can be nullptr if lognum exists but was empty.
-                    mem_ = new MemTable(internal_comparator_);
-                    mem_->Ref();
+                    memTable = new MemTable(internal_comparator_);
+                    memTable->Ref();
                 }
             }
         }
@@ -558,59 +563,72 @@ namespace leveldb {
         return status;
     }
 
-    Status DBImpl::WriteLevel0Table(MemTable *mem, VersionEdit *edit,
-                                    Version *base) {
-        mutex_.AssertHeld();
-        const uint64_t start_micros = env_->NowMicros();
-        FileMetaData meta;
-        meta.number = versionSet->NewFileNumber();
-        pending_outputs_.insert(meta.number);
-        Iterator *iter = mem->NewIterator();
-        Log(options_.logger, "Level-0 table #%llu: started",
-            (unsigned long long) meta.number);
+    Status DBImpl::WriteLevel0Table(MemTable *memTable, VersionEdit *edit, Version *base) {
+        mutex.AssertHeld();
 
-        Status s;
+        const uint64_t startMicros = env_->NowMicros();
+
+        FileMetaData fileMetaData;
+        fileMetaData.number = versionSet->NewFileNumber();
+        pendingOutputFileNumberArr.insert(fileMetaData.number);
+
+        Iterator *iterator = memTable->NewIterator();
+
+        Log(options_.logger,"Level-0 table #%llu: started", (unsigned long long) fileMetaData.number);
+
+        Status status;
         {
-            mutex_.Unlock();
-            s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
-            mutex_.Lock();
+            mutex.Unlock();
+            status = BuildTable(dbname_,
+                                env_,
+                                options_,
+                                tableCache,
+                                iterator,
+                                &fileMetaData);
+            mutex.Lock();
         }
 
-        Log(options_.logger, "Level-0 table #%llu: %lld bytes %s",
-            (unsigned long long) meta.number, (unsigned long long) meta.file_size,
-            s.ToString().c_str());
-        delete iter;
-        pending_outputs_.erase(meta.number);
+        Log(options_.logger,
+            "Level-0 table #%llu: %lld bytes %status",
+            (unsigned long long) fileMetaData.number,
+            (unsigned long long) fileMetaData.file_size,
+            status.ToString().c_str());
 
-        // Note that if file_size is zero, the file has been deleted and
-        // should not be added to the manifest.
+        delete iterator;
+        pendingOutputFileNumberArr.erase(fileMetaData.number);
+
+        // Note that if file_size is zero, the file has been deleted and should not be added to the manifest.
         int level = 0;
-        if (s.ok() && meta.file_size > 0) {
-            const Slice min_user_key = meta.smallest.user_key();
-            const Slice max_user_key = meta.largest.user_key();
+        if (status.ok() && fileMetaData.file_size > 0) {
+            const Slice min_user_key = fileMetaData.smallest.user_key();
+            const Slice max_user_key = fileMetaData.largest.user_key();
             if (base != nullptr) {
                 level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
             }
-            edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
-                          meta.largest);
+
+            edit->AddFile(level,
+                          fileMetaData.number,
+                          fileMetaData.file_size,
+                          fileMetaData.smallest,
+                          fileMetaData.largest);
         }
 
-        CompactionStats stats;
-        stats.micros = env_->NowMicros() - start_micros;
-        stats.bytes_written = meta.file_size;
-        stats_[level].Add(stats);
-        return s;
+        CompactionStats compactionStats;
+        compactionStats.micros = env_->NowMicros() - startMicros;
+        compactionStats.bytes_written = fileMetaData.file_size;
+        compactionStatArr[level].Add(compactionStats);
+        return status;
     }
 
     void DBImpl::CompactMemTable() {
-        mutex_.AssertHeld();
-        assert(imm_ != nullptr);
+        mutex.AssertHeld();
+        assert(immutableMemTable != nullptr);
 
         // Save the contents of the memtable as a new Table
         VersionEdit edit;
         Version *base = versionSet->current();
         base->Ref();
-        Status s = WriteLevel0Table(imm_, &edit, base);
+        Status s = WriteLevel0Table(immutableMemTable, &edit, base);
         base->Unref();
 
         if (s.ok() && shutting_down_.load(std::memory_order_acquire)) {
@@ -621,13 +639,13 @@ namespace leveldb {
         if (s.ok()) {
             edit.SetPrevLogNumber(0);
             edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
-            s = versionSet->LogAndApply(&edit, &mutex_);
+            s = versionSet->LogAndApply(&edit, &mutex);
         }
 
         if (s.ok()) {
             // Commit to the new state
-            imm_->Unref();
-            imm_ = nullptr;
+            immutableMemTable->Unref();
+            immutableMemTable = nullptr;
             has_imm_.store(false, std::memory_order_release);
             RemoveObsoleteFiles();
         } else {
@@ -638,7 +656,7 @@ namespace leveldb {
     void DBImpl::CompactRange(const Slice *begin, const Slice *end) {
         int max_level_with_files = 1;
         {
-            MutexLock l(&mutex_);
+            MutexLock l(&mutex);
             Version *base = versionSet->current();
             for (int level = 1; level < config::kNumLevels; level++) {
                 if (base->OverlapInLevel(level, begin, end)) {
@@ -675,7 +693,7 @@ namespace leveldb {
             manual.end = &end_storage;
         }
 
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         while (!manual.done && !shutting_down_.load(std::memory_order_acquire) &&
                bg_error_.ok()) {
             if (manual_compaction_ == nullptr) {  // Idle
@@ -696,11 +714,11 @@ namespace leveldb {
         Status s = Write(WriteOptions(), nullptr);
         if (s.ok()) {
             // Wait until the compaction completes
-            MutexLock l(&mutex_);
-            while (imm_ != nullptr && bg_error_.ok()) {
+            MutexLock l(&mutex);
+            while (immutableMemTable != nullptr && bg_error_.ok()) {
                 background_work_finished_signal_.Wait();
             }
-            if (imm_ != nullptr) {
+            if (immutableMemTable != nullptr) {
                 s = bg_error_;
             }
         }
@@ -708,7 +726,7 @@ namespace leveldb {
     }
 
     void DBImpl::RecordBackgroundError(const Status &s) {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
         if (bg_error_.ok()) {
             bg_error_ = s;
             background_work_finished_signal_.SignalAll();
@@ -716,14 +734,14 @@ namespace leveldb {
     }
 
     void DBImpl::MaybeScheduleCompaction() {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
         if (background_compaction_scheduled_) {
             // Already scheduled
         } else if (shutting_down_.load(std::memory_order_acquire)) {
             // DB is being deleted; no more background compactions
         } else if (!bg_error_.ok()) {
             // Already got an error; no more changes
-        } else if (imm_ == nullptr && manual_compaction_ == nullptr &&
+        } else if (immutableMemTable == nullptr && manual_compaction_ == nullptr &&
                    !versionSet->NeedsCompaction()) {
             // No work to be done
         } else {
@@ -737,7 +755,7 @@ namespace leveldb {
     }
 
     void DBImpl::BackgroundCall() {
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         assert(background_compaction_scheduled_);
         if (shutting_down_.load(std::memory_order_acquire)) {
             // No more background work when shutting down.
@@ -756,9 +774,9 @@ namespace leveldb {
     }
 
     void DBImpl::BackgroundCompaction() {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
 
-        if (imm_ != nullptr) {
+        if (immutableMemTable != nullptr) {
             CompactMemTable();
             return;
         }
@@ -792,7 +810,7 @@ namespace leveldb {
             c->edit()->RemoveFile(c->level(), f->number);
             c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
                                f->largest);
-            status = versionSet->LogAndApply(c->edit(), &mutex_);
+            status = versionSet->LogAndApply(c->edit(), &mutex);
             if (!status.ok()) {
                 RecordBackgroundError(status);
             }
@@ -837,7 +855,7 @@ namespace leveldb {
     }
 
     void DBImpl::CleanupCompaction(CompactionState *compact) {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
         if (compact->builder != nullptr) {
             // May happen if we get a shutdown call in the middle of compaction
             compact->builder->Abandon();
@@ -848,7 +866,7 @@ namespace leveldb {
         delete compact->outfile;
         for (size_t i = 0; i < compact->outputs.size(); i++) {
             const CompactionState::Output &out = compact->outputs[i];
-            pending_outputs_.erase(out.number);
+            pendingOutputFileNumberArr.erase(out.number);
         }
         delete compact;
     }
@@ -858,15 +876,15 @@ namespace leveldb {
         assert(compact->builder == nullptr);
         uint64_t file_number;
         {
-            mutex_.Lock();
+            mutex.Lock();
             file_number = versionSet->NewFileNumber();
-            pending_outputs_.insert(file_number);
+            pendingOutputFileNumberArr.insert(file_number);
             CompactionState::Output out;
             out.number = file_number;
             out.smallest.Clear();
             out.largest.Clear();
             compact->outputs.push_back(out);
-            mutex_.Unlock();
+            mutex.Unlock();
         }
 
         // Make the output file
@@ -914,7 +932,7 @@ namespace leveldb {
         if (s.ok() && current_entries > 0) {
             // Verify that the table is usable
             Iterator *iter =
-                    table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);
+                    tableCache->NewIterator(ReadOptions(), output_number, current_bytes);
             s = iter->status();
             delete iter;
             if (s.ok()) {
@@ -928,7 +946,7 @@ namespace leveldb {
     }
 
     Status DBImpl::InstallCompactionResults(CompactionState *compact) {
-        mutex_.AssertHeld();
+        mutex.AssertHeld();
         Log(options_.logger, "Compacted %d@%d + %d@%d files => %lld bytes",
             compact->compaction->num_input_files(0), compact->compaction->level(),
             compact->compaction->num_input_files(1), compact->compaction->level() + 1,
@@ -942,12 +960,12 @@ namespace leveldb {
             compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
                                                  out.smallest, out.largest);
         }
-        return versionSet->LogAndApply(compact->compaction->edit(), &mutex_);
+        return versionSet->LogAndApply(compact->compaction->edit(), &mutex);
     }
 
     Status DBImpl::DoCompactionWork(CompactionState *compact) {
         const uint64_t start_micros = env_->NowMicros();
-        int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
+        int64_t imm_micros = 0;  // Micros spent doing immutableMemTable compactions
 
         Log(options_.logger, "Compacting %d@%d + %d@%d files",
             compact->compaction->num_input_files(0), compact->compaction->level(),
@@ -966,7 +984,7 @@ namespace leveldb {
         Iterator *input = versionSet->MakeInputIterator(compact->compaction);
 
         // Release mutex while we're actually doing the compaction work
-        mutex_.Unlock();
+        mutex.Unlock();
 
         input->SeekToFirst();
         Status status;
@@ -978,13 +996,13 @@ namespace leveldb {
             // Prioritize immutable compaction work
             if (has_imm_.load(std::memory_order_relaxed)) {
                 const uint64_t imm_start = env_->NowMicros();
-                mutex_.Lock();
-                if (imm_ != nullptr) {
+                mutex.Lock();
+                if (immutableMemTable != nullptr) {
                     CompactMemTable();
                     // Wake up MakeRoomForWrite() if necessary.
                     background_work_finished_signal_.SignalAll();
                 }
-                mutex_.Unlock();
+                mutex.Unlock();
                 imm_micros += (env_->NowMicros() - imm_start);
             }
 
@@ -1006,10 +1024,10 @@ namespace leveldb {
                 last_sequence_for_key = kMaxSequenceNumber;
             } else {
                 if (!has_current_user_key ||
-                    user_comparator()->Compare(ikey.user_key, Slice(current_user_key)) !=
-                    0) {
+                        user_comparator()->Compare(ikey.userKey, Slice(current_user_key)) !=
+                        0) {
                     // First occurrence of this user key
-                    current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
+                    current_user_key.assign(ikey.userKey.data(), ikey.userKey.size());
                     has_current_user_key = true;
                     last_sequence_for_key = kMaxSequenceNumber;
                 }
@@ -1019,7 +1037,7 @@ namespace leveldb {
                     drop = true;  // (A)
                 } else if (ikey.type == kTypeDeletion &&
                            ikey.sequence <= compact->smallest_snapshot &&
-                           compact->compaction->IsBaseLevelForKey(ikey.user_key)) {
+                           compact->compaction->IsBaseLevelForKey(ikey.userKey)) {
                     // For this user key:
                     // (1) there is no data in higher levels
                     // (2) data in lower levels will have larger sequence numbers
@@ -1036,9 +1054,9 @@ namespace leveldb {
             Log(options_.logger,
                 "  Compact: %s, seq %d, type: %d %d, drop: %d, is_base: %d, "
                 "%d smallest_snapshot: %d",
-                ikey.user_key.ToString().c_str(),
+                ikey.userKey.ToString().c_str(),
                 (int)ikey.sequence, ikey.type, kTypeValue, drop,
-                compact->compaction->IsBaseLevelForKey(ikey.user_key),
+                compact->compaction->IsBaseLevelForKey(ikey.userKey),
                 (int)last_sequence_for_key, (int)compact->smallest_snapshot);
 #endif
 
@@ -1092,8 +1110,8 @@ namespace leveldb {
             stats.bytes_written += compact->outputs[i].file_size;
         }
 
-        mutex_.Lock();
-        stats_[compact->compaction->level() + 1].Add(stats);
+        mutex.Lock();
+        compactionStatArr[compact->compaction->level() + 1].Add(stats);
 
         if (status.ok()) {
             status = InstallCompactionResults(compact);
@@ -1133,27 +1151,27 @@ namespace leveldb {
     Iterator *DBImpl::NewInternalIterator(const ReadOptions &options,
                                           SequenceNumber *latest_snapshot,
                                           uint32_t *seed) {
-        mutex_.Lock();
+        mutex.Lock();
         *latest_snapshot = versionSet->LastSequence();
 
         // Collect together all needed child iterators
         std::vector<Iterator *> list;
-        list.push_back(mem_->NewIterator());
-        mem_->Ref();
-        if (imm_ != nullptr) {
-            list.push_back(imm_->NewIterator());
-            imm_->Ref();
+        list.push_back(memTable->NewIterator());
+        memTable->Ref();
+        if (immutableMemTable != nullptr) {
+            list.push_back(immutableMemTable->NewIterator());
+            immutableMemTable->Ref();
         }
         versionSet->current()->AddIterators(options, &list);
         Iterator *internal_iter =
                 NewMergingIterator(&internal_comparator_, &list[0], list.size());
         versionSet->current()->Ref();
 
-        IterState *cleanup = new IterState(&mutex_, mem_, imm_, versionSet->current());
+        IterState *cleanup = new IterState(&mutex, memTable, immutableMemTable, versionSet->current());
         internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
 
         *seed = ++seed_;
-        mutex_.Unlock();
+        mutex.Unlock();
         return internal_iter;
     }
 
@@ -1164,14 +1182,14 @@ namespace leveldb {
     }
 
     int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         return versionSet->MaxNextLevelOverlappingBytes();
     }
 
     Status DBImpl::Get(const ReadOptions &options, const Slice &key,
                        std::string *value) {
         Status s;
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         SequenceNumber snapshot;
         if (options.snapshot != nullptr) {
             snapshot =
@@ -1180,8 +1198,8 @@ namespace leveldb {
             snapshot = versionSet->LastSequence();
         }
 
-        MemTable *mem = mem_;
-        MemTable *imm = imm_;
+        MemTable *mem = memTable;
+        MemTable *imm = immutableMemTable;
         Version *current = versionSet->current();
         mem->Ref();
         if (imm != nullptr) imm->Ref();
@@ -1192,7 +1210,7 @@ namespace leveldb {
 
         // Unlock while reading from files and memtables
         {
-            mutex_.Unlock();
+            mutex.Unlock();
             // First look in the memtable, then in the immutable memtable (if any).
             LookupKey lkey(key, snapshot);
             if (mem->Get(lkey, value, &s)) {
@@ -1203,7 +1221,7 @@ namespace leveldb {
                 s = current->Get(options, lkey, value, &stats);
                 have_stat_update = true;
             }
-            mutex_.Lock();
+            mutex.Lock();
         }
 
         if (have_stat_update && current->UpdateStats(stats)) {
@@ -1228,19 +1246,19 @@ namespace leveldb {
     }
 
     void DBImpl::RecordReadSample(Slice key) {
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         if (versionSet->current()->RecordReadSample(key)) {
             MaybeScheduleCompaction();
         }
     }
 
     const Snapshot *DBImpl::GetSnapshot() {
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         return snapshots_.New(versionSet->LastSequence());
     }
 
     void DBImpl::ReleaseSnapshot(const Snapshot *snapshot) {
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         snapshots_.Delete(static_cast<const SnapshotImpl *>(snapshot));
     }
 
@@ -1253,48 +1271,51 @@ namespace leveldb {
         return DB::Delete(options, key);
     }
 
-    Status DBImpl::Write(const WriteOptions &options, WriteBatch *updates) {
-        Writer w(&mutex_);
-        w.batch = updates;
-        w.sync = options.sync;
-        w.done = false;
+    Status DBImpl::Write(const WriteOptions &writeOptions, WriteBatch *writeBatch) {
+        Writer writer(&mutex);
+        writer.batch = writeBatch;
+        writer.sync = writeOptions.sync;
+        writer.done = false;
 
-        MutexLock l(&mutex_);
-        writers_.push_back(&w);
-        while (!w.done && &w != writers_.front()) {
-            w.cv.Wait();
+        MutexLock mutexLock(&mutex);
+        writerDeque.push_back(&writer);
+        while (!writer.done && &writer != writerDeque.front()) {
+            writer.condVar.Wait();
         }
-        if (w.done) {
-            return w.status;
+        if (writer.done) {
+            return writer.status;
         }
 
         // May temporarily unlock and wait.
-        Status status = MakeRoomForWrite(updates == nullptr);
+        Status status = MakeRoomForWrite(writeBatch == nullptr);
         uint64_t last_sequence = versionSet->LastSequence();
-        Writer *last_writer = &w;
-        if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
+        Writer *last_writer = &writer;
+        if (status.ok() && writeBatch != nullptr) {  // nullptr batch is for compactions
             WriteBatch *write_batch = BuildBatchGroup(&last_writer);
             WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
             last_sequence += WriteBatchInternal::Count(write_batch);
 
             // Add to log and apply to memtable.  We can release the lock
-            // during this phase since &w is currently responsible for logging
+            // during this phase since &writer is currently responsible for logging
             // and protects against concurrent loggers and concurrent writes
             // into memTable.
             {
-                mutex_.Unlock();
+                mutex.Unlock();
+
+                // 写wal
                 status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
                 bool sync_error = false;
-                if (status.ok() && options.sync) {
+                if (status.ok() && writeOptions.sync) {
                     status = logfile_->Sync();
                     if (!status.ok()) {
                         sync_error = true;
                     }
                 }
                 if (status.ok()) {
-                    status = WriteBatchInternal::InsertInto(write_batch, mem_);
+                    status = WriteBatchInternal::InsertInto(write_batch, memTable);
                 }
-                mutex_.Lock();
+
+                mutex.Lock();
                 if (sync_error) {
                     // The state of the log file is indeterminate: the log record we
                     // just added may or may not show up when the DB is re-opened.
@@ -1308,19 +1329,19 @@ namespace leveldb {
         }
 
         while (true) {
-            Writer *ready = writers_.front();
-            writers_.pop_front();
-            if (ready != &w) {
+            Writer *ready = writerDeque.front();
+            writerDeque.pop_front();
+            if (ready != &writer) {
                 ready->status = status;
                 ready->done = true;
-                ready->cv.Signal();
+                ready->condVar.Signal();
             }
             if (ready == last_writer) break;
         }
 
         // Notify new head of write queue
-        if (!writers_.empty()) {
-            writers_.front()->cv.Signal();
+        if (!writerDeque.empty()) {
+            writerDeque.front()->condVar.Signal();
         }
 
         return status;
@@ -1329,9 +1350,9 @@ namespace leveldb {
 // REQUIRES: Writer list must be non-empty
 // REQUIRES: First writer must have a non-null batch
     WriteBatch *DBImpl::BuildBatchGroup(Writer **last_writer) {
-        mutex_.AssertHeld();
-        assert(!writers_.empty());
-        Writer *first = writers_.front();
+        mutex.AssertHeld();
+        assert(!writerDeque.empty());
+        Writer *first = writerDeque.front();
         WriteBatch *result = first->batch;
         assert(result != nullptr);
 
@@ -1346,9 +1367,9 @@ namespace leveldb {
         }
 
         *last_writer = first;
-        std::deque<Writer *>::iterator iter = writers_.begin();
+        std::deque<Writer *>::iterator iter = writerDeque.begin();
         ++iter;  // Advance past "first"
-        for (; iter != writers_.end(); ++iter) {
+        for (; iter != writerDeque.end(); ++iter) {
             Writer *w = *iter;
             if (w->sync && !first->sync) {
                 // Do not include a sync write into a batch handled by a non-sync write.
@@ -1376,11 +1397,11 @@ namespace leveldb {
         return result;
     }
 
-// REQUIRES: mutex_ is held
+// REQUIRES: mutex is held
 // REQUIRES: this thread is currently at the front of the writer queue
     Status DBImpl::MakeRoomForWrite(bool force) {
-        mutex_.AssertHeld();
-        assert(!writers_.empty());
+        mutex.AssertHeld();
+        assert(!writerDeque.empty());
         bool allow_delay = !force;
         Status s;
         while (true) {
@@ -1396,15 +1417,15 @@ namespace leveldb {
                 // individual write by 1ms to reduce latency variance.  Also,
                 // this delay hands over some CPU to the compaction thread in
                 // case it is sharing the same core as the writer.
-                mutex_.Unlock();
+                mutex.Unlock();
                 env_->SleepForMicroseconds(1000);
                 allow_delay = false;  // Do not delay a single write more than once
-                mutex_.Lock();
+                mutex.Lock();
             } else if (!force &&
-                       (mem_->ApproximateMemoryUsage() <= options_.writeBufferSize)) {
+                       (memTable->ApproximateMemoryUsage() <= options_.writeBufferSize)) {
                 // There is room in current memtable
                 break;
-            } else if (imm_ != nullptr) {
+            } else if (immutableMemTable != nullptr) {
                 // We have filled up the current memtable, but the previous
                 // one is still being compacted, so we wait.
                 Log(options_.logger, "Current memtable full; waiting...\n");
@@ -1429,10 +1450,10 @@ namespace leveldb {
                 logfile_ = lfile;
                 logfile_number_ = new_log_number;
                 log_ = new log::Writer(lfile);
-                imm_ = mem_;
+                immutableMemTable = memTable;
                 has_imm_.store(true, std::memory_order_release);
-                mem_ = new MemTable(internal_comparator_);
-                mem_->Ref();
+                memTable = new MemTable(internal_comparator_);
+                memTable->Ref();
                 force = false;  // Do not force another compaction if have room
                 MaybeScheduleCompaction();
             }
@@ -1443,7 +1464,7 @@ namespace leveldb {
     bool DBImpl::GetProperty(const Slice &property, std::string *value) {
         value->clear();
 
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         Slice in = property;
         Slice prefix("leveldb.");
         if (!in.starts_with(prefix)) return false;
@@ -1471,12 +1492,12 @@ namespace leveldb {
             value->append(buf);
             for (int level = 0; level < config::kNumLevels; level++) {
                 int files = versionSet->NumLevelFiles(level);
-                if (stats_[level].micros > 0 || files > 0) {
+                if (compactionStatArr[level].micros > 0 || files > 0) {
                     std::snprintf(buf, sizeof(buf), "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
                                   level, files, versionSet->NumLevelBytes(level) / 1048576.0,
-                                  stats_[level].micros / 1e6,
-                                  stats_[level].bytes_read / 1048576.0,
-                                  stats_[level].bytes_written / 1048576.0);
+                                  compactionStatArr[level].micros / 1e6,
+                                  compactionStatArr[level].bytes_read / 1048576.0,
+                                  compactionStatArr[level].bytes_written / 1048576.0);
                     value->append(buf);
                 }
             }
@@ -1486,11 +1507,11 @@ namespace leveldb {
             return true;
         } else if (in == "approximate-memory-usage") {
             size_t total_usage = options_.blockCache->TotalCharge();
-            if (mem_) {
-                total_usage += mem_->ApproximateMemoryUsage();
+            if (memTable) {
+                total_usage += memTable->ApproximateMemoryUsage();
             }
-            if (imm_) {
-                total_usage += imm_->ApproximateMemoryUsage();
+            if (immutableMemTable) {
+                total_usage += immutableMemTable->ApproximateMemoryUsage();
             }
             char buf[50];
             std::snprintf(buf, sizeof(buf), "%llu",
@@ -1504,12 +1525,12 @@ namespace leveldb {
 
     void DBImpl::GetApproximateSizes(const Range *range, int n, uint64_t *sizes) {
         // TODO(opt): better implementation
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex);
         Version *v = versionSet->current();
         v->Ref();
 
         for (int i = 0; i < n; i++) {
-            // Convert user_key into a corresponding internal key.
+            // Convert userKey into a corresponding internal key.
             InternalKey k1(range[i].start, kMaxSequenceNumber, kValueTypeForSeek);
             InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
             uint64_t start = versionSet->ApproximateOffsetOf(v, k1);
@@ -1520,8 +1541,7 @@ namespace leveldb {
         v->Unref();
     }
 
-// Default implementations of convenience methods that subclasses of DB
-// can call if they wish
+    // Default implementations of convenience methods that subclasses of DB can call if they wish
     Status DB::Put(const WriteOptions &opt, const Slice &key, const Slice &value) {
         WriteBatch batch;
         batch.Put(key, value);
@@ -1541,12 +1561,12 @@ namespace leveldb {
 
         DBImpl *dbImpl = new DBImpl(options, dbname);
 
-        dbImpl->mutex_.Lock();
+        dbImpl->mutex.Lock();
 
         VersionEdit versionEdit;
         bool saveManifest = false;
         Status status = dbImpl->Recover(&versionEdit, &saveManifest);
-        if (status.ok() && dbImpl->mem_ == nullptr) {
+        if (status.ok() && dbImpl->memTable == nullptr) {
             // Create new log and a corresponding memtable.
             uint64_t new_log_number = dbImpl->versionSet->NewFileNumber();
             WritableFile *lfile;
@@ -1556,15 +1576,15 @@ namespace leveldb {
                 dbImpl->logfile_ = lfile;
                 dbImpl->logfile_number_ = new_log_number;
                 dbImpl->log_ = new log::Writer(lfile);
-                dbImpl->mem_ = new MemTable(dbImpl->internal_comparator_);
-                dbImpl->mem_->Ref();
+                dbImpl->memTable = new MemTable(dbImpl->internal_comparator_);
+                dbImpl->memTable->Ref();
             }
         }
 
         if (status.ok() && saveManifest) {
             versionEdit.SetPrevLogNumber(0);  // No older logs needed after recovery.
             versionEdit.SetLogNumber(dbImpl->logfile_number_);
-            status = dbImpl->versionSet->LogAndApply(&versionEdit, &dbImpl->mutex_);
+            status = dbImpl->versionSet->LogAndApply(&versionEdit, &dbImpl->mutex);
         }
 
         if (status.ok()) {
@@ -1572,10 +1592,10 @@ namespace leveldb {
             dbImpl->MaybeScheduleCompaction();
         }
 
-        dbImpl->mutex_.Unlock();
+        dbImpl->mutex.Unlock();
 
         if (status.ok()) {
-            assert(dbImpl->mem_ != nullptr);
+            assert(dbImpl->memTable != nullptr);
             *db = dbImpl;
         } else {
             delete dbImpl;

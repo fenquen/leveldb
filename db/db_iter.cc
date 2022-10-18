@@ -185,12 +185,12 @@ void DBIter::FindNextUserEntry(bool skipping, std::string* skip) {
         case kTypeDeletion:
           // Arrange to skip all upcoming entries for this key since
           // they are hidden by this deletion.
-          SaveKey(ikey.user_key, skip);
+          SaveKey(ikey.userKey, skip);
           skipping = true;
           break;
         case kTypeValue:
           if (skipping &&
-              user_comparator_->Compare(ikey.user_key, *skip) <= 0) {
+              user_comparator_->Compare(ikey.userKey, *skip) <= 0) {
             // Entry hidden
           } else {
             valid_ = true;
@@ -242,7 +242,7 @@ void DBIter::FindPrevUserEntry() {
       ParsedInternalKey ikey;
       if (ParseKey(&ikey) && ikey.sequence <= sequence_) {
         if ((value_type != kTypeDeletion) &&
-            user_comparator_->Compare(ikey.user_key, saved_key_) < 0) {
+            user_comparator_->Compare(ikey.userKey, saved_key_) < 0) {
           // We encountered a non-deleted value in entries for previous keys,
           break;
         }

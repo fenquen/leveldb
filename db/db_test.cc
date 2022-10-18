@@ -377,7 +377,7 @@ class DBTest : public testing::Test {
         if (!ParseInternalKey(iter->key(), &ikey)) {
           result += "CORRUPTED";
         } else {
-          if (last_options_.comparator->Compare(ikey.user_key, user_key) != 0) {
+          if (last_options_.comparator->Compare(ikey.userKey, user_key) != 0) {
             break;
           }
           if (!first) {
@@ -1500,7 +1500,7 @@ TEST_F(DBTest, L0_CompactionBug_Issue44_b) {
   Delete("e");
   Put("", "");
   Reopen();
-  Put("c", "cv");
+  Put("c", "condVar");
   Reopen();
   Put("", "");
   Reopen();
@@ -1514,9 +1514,9 @@ TEST_F(DBTest, L0_CompactionBug_Issue44_b) {
   Delete("d");
   Delete("b");
   Reopen();
-  ASSERT_EQ("(->)(c->cv)", Contents());
+  ASSERT_EQ("(->)(c->condVar)", Contents());
   DelayMilliseconds(1000);  // Wait for compaction to finish
-  ASSERT_EQ("(->)(c->cv)", Contents());
+  ASSERT_EQ("(->)(c->condVar)", Contents());
 }
 
 TEST_F(DBTest, Fflush_Issue474) {
@@ -1547,7 +1547,7 @@ TEST_F(DBTest, ComparatorCheck) {
   new_options.comparator = &cmp;
   Status s = TryReopen(&new_options);
   ASSERT_TRUE(!s.ok());
-  ASSERT_TRUE(s.ToString().find("comparator") != std::string::npos)
+  ASSERT_TRUE(s.ToString().find("internalKeyComparator") != std::string::npos)
       << s.ToString();
 }
 

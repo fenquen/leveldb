@@ -35,14 +35,12 @@
 #include "util/random.h"
 
 namespace leveldb {
-
     class Arena;
 
     template<typename Key, class Comparator>
     class SkipList {
     private:
         struct Node;
-
     public:
         // Create a new SkipList object that will use "cmp" for comparing keys,
         // and will allocate memory using "*arena".  Objects allocated in the arena
@@ -105,14 +103,14 @@ namespace leveldb {
         };
 
         inline int GetMaxHeight() const {
-            return max_height_.load(std::memory_order_relaxed);
+            return maxHeight.load(std::memory_order_relaxed);
         }
 
         Node *NewNode(const Key &key, int height);
 
         int RandomHeight();
 
-        bool Equal(const Key &a, const Key &b) const { return (compare_(a, b) == 0); }
+        bool Equal(const Key &a, const Key &b) const { return (comparator(a, b) == 0); }
 
         // Return true if key is greater than the data stored in "n"
         bool KeyIsAfterNode(const Key &key, Node *n) const;
@@ -121,52 +119,54 @@ namespace leveldb {
         // Return nullptr if there is no such node.
         //
         // If prev is non-null, fills prev[level] with pointer to previous
-        // node at "level" for every level in [0..max_height_-1].
+        // node at "level" for every level in [0..maxHeight-1].
         Node *FindGreaterOrEqual(const Key &key, Node **prev) const;
 
         // Return the latest node with a key < key.
-        // Return head_ if there is no such node.
+        // Return head if there is no such node.
         Node *FindLessThan(const Key &key) const;
 
         // Return the last node in the list.
-        // Return head_ if list is empty.
+        // Return head if list is empty.
         Node *FindLast() const;
 
         // Immutable after construction
-        Comparator const compare_;
-        Arena *const arena_;  // Arena used for allocations of nodes
+        Comparator const comparator;
+        Arena *const arena;  // Arena used for allocations of nodes
 
-        Node *const head_;
+        Node *const head;
 
         // Modified only by Insert().  Read racily by readers, but stale
         // values are ok.
-        std::atomic<int> max_height_;  // Height of the entire list
+        std::atomic<int> maxHeight;  // Height of the entire list
 
         // Read/written only by Insert().
-        Random rnd_;
+        Random random;
     };
 
-// Implementation details follow
+    // implementation details follow
     template<typename Key, class Comparator>
     struct SkipList<Key, Comparator>::Node {
-        explicit Node(const Key &k) : key(k) {}
+        explicit Node(const Key &key) : key(key) {
+
+        }
 
         Key const key;
 
-        // Accessors/mutators for links.  Wrapped in methods so we can
-        // add the appropriate barriers as necessary.
-        Node *Next(int n) {
-            assert(n >= 0);
-            // Use an 'acquire load' so that we observe a fully initialized
-            // version of the returned Node.
-            return next_[n].load(std::memory_order_acquire);
+        // 得到了该level上的next
+        // Accessors/mutators for links, Wrapped in methods so we can add the appropriate barriers as necessary.
+        Node *Next(int level) {
+            assert(level >= 0);
+
+            // Use an 'acquire load' so that we observe a fully initialized version of the returned Node.
+            return next_[level].load(std::memory_order_acquire);
         }
 
-        void SetNext(int n, Node *x) {
+        void SetNext(int n, Node *nextNode) {
             assert(n >= 0);
             // Use a 'release store' so that anybody who reads through this
             // pointer observes a fully initialized version of the inserted node.
-            next_[n].store(x, std::memory_order_release);
+            next_[n].store(nextNode, std::memory_order_release);
         }
 
         // No-barrier variants that can be safely used in a few locations.
@@ -181,15 +181,15 @@ namespace leveldb {
         }
 
     private:
-        // Array of length equal to the node height.  next_[0] is lowest level link.
+        // 这边的[1]其实不是真的只有这么点 NewNode()有相应说明
+        // Array of length equal to the node height.  next_[0] is lowest level link
         std::atomic<Node *> next_[1];
     };
 
     template<typename Key, class Comparator>
-    typename SkipList<Key, Comparator>::Node *SkipList<Key, Comparator>::NewNode(
-            const Key &key, int height) {
-        char *const node_memory = arena_->AllocateAligned(
-                sizeof(Node) + sizeof(std::atomic<Node *>) * (height - 1));
+    typename SkipList<Key, Comparator>::Node *
+    SkipList<Key, Comparator>::NewNode(const Key &key, int height) {
+        char *const node_memory = arena->AllocateAligned(sizeof(Node) + sizeof(std::atomic<Node *>) * (height - 1));
         return new(node_memory) Node(key);
     }
 
@@ -222,7 +222,7 @@ namespace leveldb {
         // last node that falls before key.
         assert(Valid());
         node_ = list_->FindLessThan(node_->key);
-        if (node_ == list_->head_) {
+        if (node_ == list_->head) {
             node_ = nullptr;
         }
     }
@@ -234,13 +234,13 @@ namespace leveldb {
 
     template<typename Key, class Comparator>
     inline void SkipList<Key, Comparator>::Iterator::SeekToFirst() {
-        node_ = list_->head_->Next(0);
+        node_ = list_->head->Next(0);
     }
 
     template<typename Key, class Comparator>
     inline void SkipList<Key, Comparator>::Iterator::SeekToLast() {
         node_ = list_->FindLast();
-        if (node_ == list_->head_) {
+        if (node_ == list_->head) {
             node_ = nullptr;
         }
     }
@@ -249,53 +249,58 @@ namespace leveldb {
     int SkipList<Key, Comparator>::RandomHeight() {
         // Increase height with probability 1 in kBranching
         static const unsigned int kBranching = 4;
+
         int height = 1;
-        while (height < kMaxHeight && ((rnd_.Next() % kBranching) == 0)) {
+        while (height < kMaxHeight && ((random.Next() % kBranching) == 0)) {
             height++;
         }
+
         assert(height > 0);
         assert(height <= kMaxHeight);
+
         return height;
     }
 
     template<typename Key, class Comparator>
-    bool SkipList<Key, Comparator>::KeyIsAfterNode(const Key &key, Node *n) const {
-        // null n is considered infinite
-        return (n != nullptr) && (compare_(n->key, key) < 0);
+    bool SkipList<Key, Comparator>::KeyIsAfterNode(const Key &key, Node *node) const {
+        // null node is considered infinite
+        return (node != nullptr) && (comparator(node->key, key) < 0);
     }
 
     template<typename Key, class Comparator>
     typename SkipList<Key, Comparator>::Node *
-    SkipList<Key, Comparator>::FindGreaterOrEqual(const Key &key,
-                                                  Node **prev) const {
-        Node *x = head_;
+    SkipList<Key, Comparator>::FindGreaterOrEqual(const Key &key, Node **prev) const {
+        Node *node = head;
         int level = GetMaxHeight() - 1;
         while (true) {
-            Node *next = x->Next(level);
-            if (KeyIsAfterNode(key, next)) {
+            Node *nextNode = node->Next(level);
+            if (KeyIsAfterNode(key, nextNode)) {
                 // Keep searching in this list
-                x = next;
-            } else {
-                if (prev != nullptr) prev[level] = x;
-                if (level == 0) {
-                    return next;
-                } else {
-                    // Switch to next list
-                    level--;
-                }
+                node = nextNode;
+                continue;
             }
+
+            if (prev != nullptr)
+                prev[level] = node;
+
+            if (level == 0) {
+                return nextNode;
+            }
+
+            // Switch to nextNode list
+            level--;
         }
     }
 
     template<typename Key, class Comparator>
     typename SkipList<Key, Comparator>::Node *
     SkipList<Key, Comparator>::FindLessThan(const Key &key) const {
-        Node *x = head_;
+        Node *x = head;
         int level = GetMaxHeight() - 1;
         while (true) {
-            assert(x == head_ || compare_(x->key, key) < 0);
+            assert(x == head || comparator(x->key, key) < 0);
             Node *next = x->Next(level);
-            if (next == nullptr || compare_(next->key, key) >= 0) {
+            if (next == nullptr || comparator(next->key, key) >= 0) {
                 if (level == 0) {
                     return x;
                 } else {
@@ -311,7 +316,7 @@ namespace leveldb {
     template<typename Key, class Comparator>
     typename SkipList<Key, Comparator>::Node *SkipList<Key, Comparator>::FindLast()
     const {
-        Node *x = head_;
+        Node *x = head;
         int level = GetMaxHeight() - 1;
         while (true) {
             Node *next = x->Next(level);
@@ -330,13 +335,13 @@ namespace leveldb {
 
     template<typename Key, class Comparator>
     SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena *arena)
-            : compare_(cmp),
-              arena_(arena),
-              head_(NewNode(0 /* any key will do */, kMaxHeight)),
-              max_height_(1),
-              rnd_(0xdeadbeef) {
+            : comparator(cmp),
+              arena(arena),
+              head(NewNode(0 /* any key will do */, kMaxHeight)),
+              maxHeight(1),
+              random(0xdeadbeef) {
         for (int i = 0; i < kMaxHeight; i++) {
-            head_->SetNext(i, nullptr);
+            head->SetNext(i, nullptr);
         }
     }
 
@@ -353,16 +358,16 @@ namespace leveldb {
         int height = RandomHeight();
         if (height > GetMaxHeight()) {
             for (int i = GetMaxHeight(); i < height; i++) {
-                prev[i] = head_;
+                prev[i] = head;
             }
-            // It is ok to mutate max_height_ without any synchronization
+            // It is ok to mutate maxHeight without any synchronization
             // with concurrent readers.  A concurrent reader that observes
-            // the new value of max_height_ will see either the old value of
-            // new level pointers from head_ (nullptr), or a new value set in
+            // the new value of maxHeight will see either the old value of
+            // new level pointers from head (nullptr), or a new value set in
             // the loop below.  In the former case the reader will
             // immediately drop to the next level since nullptr sorts after all
             // keys.  In the latter case the reader will use the new node.
-            max_height_.store(height, std::memory_order_relaxed);
+            maxHeight.store(height, std::memory_order_relaxed);
         }
 
         x = NewNode(key, height);

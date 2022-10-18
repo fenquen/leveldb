@@ -153,8 +153,8 @@ Status DumpTable(Env* env, const std::string& fname, WritableFile* dst) {
     s = env->NewRandomAccessFile(fname, &file);
   }
   if (s.ok()) {
-    // We use the default comparator, which may or may not match the
-    // comparator used in this database. However this should not cause
+    // We use the default internalKeyComparator, which may or may not match the
+    // internalKeyComparator used in this database. However this should not cause
     // problems since we only use Table operations that do not require
     // any comparisons.  In particular, we do not call Seek or Prev.
     s = Table::Open(Options(), file, file_size, &table);
@@ -181,7 +181,7 @@ Status DumpTable(Env* env, const std::string& fname, WritableFile* dst) {
       dst->Append(r);
     } else {
       r = "'";
-      AppendEscapedStringTo(&r, key.user_key);
+      AppendEscapedStringTo(&r, key.userKey);
       r += "' @ ";
       AppendNumberTo(&r, key.sequence);
       r += " : ";

@@ -5,7 +5,7 @@ _Jeff Dean, Sanjay Ghemawat_
 
 The leveldb library provides a persistent key value store. Keys and values are
 arbitrary byte arrays.  The keys are ordered within the key value store
-according to a user-specified comparator function.
+according to a user-specified internalKeyComparator function.
 
 ## Opening A Database
 
@@ -245,7 +245,7 @@ storage for slice will disappear.
 ## Comparators
 
 The preceding examples used the default ordering function for key, which orders
-bytes lexicographically. You can however supply a custom comparator when opening
+bytes lexicographically. You can however supply a custom internalKeyComparator when opening
 a database.  For example, suppose each database key consists of two numbers and
 we should sort by the first number, breaking ties by the second number. First,
 define a proper subclass of `leveldb::Comparator` that expresses these rules:
@@ -275,21 +275,21 @@ class TwoPartComparator : public leveldb::Comparator {
 };
 ```
 
-Now create a database using this custom comparator:
+Now create a database using this custom internalKeyComparator:
 
 ```c++
 TwoPartComparator cmp;
 leveldb::DB* db;
 leveldb::Options options;
 options.create_if_missing = true;
-options.comparator = &cmp;
+options.internalKeyComparator = &cmp;
 leveldb::Status status = leveldb::DB::Open(options, "/tmp/testdb", &db);
 ...
 ```
 
 ### Backwards compatibility
 
-The result of the comparator's Name method is attached to the database when it
+The result of the internalKeyComparator's Name method is attached to the database when it
 is created, and is checked on every subsequent database open. If the name
 changes, the `leveldb::DB::Open` call will fail. Therefore, change the name if
 and only if the new key format and comparison function are incompatible with
@@ -300,8 +300,8 @@ You can however still gradually evolve your key format over time with a little
 bit of pre-planning. For example, you could store a version number at the end of
 each key (one byte should suffice for most uses). When you wish to switch to a
 new key format (e.g., adding an optional third part to the keys processed by
-`TwoPartComparator`), (a) keep the same comparator name (b) increment the
-version number for new keys (c) change the comparator function so it uses the
+`TwoPartComparator`), (a) keep the same internalKeyComparator name (b) increment the
+version number for new keys (c) change the internalKeyComparator function so it uses the
 version numbers found in the keys to decide how to interpret them.
 
 ## Performance
@@ -414,10 +414,10 @@ a 100. Increasing the bits per key will lead to a larger reduction at the cost
 of more memory usage. We recommend that applications whose working set does not
 fit in memory and that do a lot of random reads set a filter policy.
 
-If you are using a custom comparator, you should ensure that the filter policy
-you are using is compatible with your comparator. For example, consider a
-comparator that ignores trailing spaces when comparing keys.
-`NewBloomFilterPolicy` must not be used with such a comparator. Instead, the
+If you are using a custom internalKeyComparator, you should ensure that the filter policy
+you are using is compatible with your internalKeyComparator. For example, consider a
+internalKeyComparator that ignores trailing spaces when comparing keys.
+`NewBloomFilterPolicy` must not be used with such a internalKeyComparator. Instead, the
 application should provide a custom filter policy that also ignores trailing
 spaces. For example:
 

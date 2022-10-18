@@ -146,11 +146,11 @@ namespace leveldb {
 
         Iterator *NewConcatenatingIterator(const ReadOptions &, int level) const;
 
-        // Call func(arg, level, f) for every file that overlaps user_key in
+        // Call func(arg, level, f) for every file that overlaps userKey in
         // order from newest to oldest.  If an invocation of func returns
         // false, makes no more calls.
         //
-        // REQUIRES: user portion of internal_key == user_key.
+        // REQUIRES: user portion of internal_key == userKey.
         void ForEachOverlapping(Slice user_key, Slice internal_key, void *arg,
                                 bool (*func)(void *, int, FileMetaData *));
 
@@ -200,11 +200,15 @@ namespace leveldb {
         // Return the current version.
         Version *current() const { return current_; }
 
-        // Return the current manifest file number
-        uint64_t ManifestFileNumber() const { return manifest_file_number_; }
+        // return the current manifest file number
+        uint64_t ManifestFileNumber() const {
+            return manifest_file_number_;
+        }
 
         // Allocate and return a new file number
-        uint64_t NewFileNumber() { return next_file_number_++; }
+        uint64_t NewFileNumber() {
+            return next_file_number_++;
+        }
 
         // Arrange to reuse "file_number" unless a newer file number has
         // already been allocated.

@@ -206,9 +206,9 @@ Guide to header files:
 * **include/leveldb/options.h**: Control over the behavior of an entire database,
 and also control over the behavior of individual reads and writes.
 
-* **include/leveldb/comparator.h**: Abstraction for user-specified comparison function.
+* **include/leveldb/internalKeyComparator.h**: Abstraction for user-specified comparison function.
 If you want just bytewise comparison of keys, you can use the default
-comparator, but clients can write their own comparator implementations if they
+internalKeyComparator, but clients can write their own internalKeyComparator implementations if they
 want custom ordering (e.g. to handle different character encodings, etc.).
 
 * **include/leveldb/iterator.h**: Interface for iterating over data. You can get

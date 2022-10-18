@@ -15,16 +15,19 @@ namespace leveldb {
         uint32_t len;
         const char *p = data;
         p = GetVarint32Ptr(p, p + 5, &len);  // +5: we assume "p" is not corrupted
-        return Slice(p, len);
+        return {p, len};
     }
 
-    MemTable::MemTable(const InternalKeyComparator &comparator)
-            : comparator_(comparator), refs_(0), table_(comparator_, &arena_) {}
+    MemTable::MemTable(const InternalKeyComparator &internalKeyComparator) : keyComparator(internalKeyComparator),
+                                                                             refs_(0),
+                                                                             table(keyComparator, &arena) {}
 
-    MemTable::~MemTable() { assert(refs_ == 0); }
+    MemTable::~MemTable() {
+        assert(refs_ == 0);
+    }
 
     size_t MemTable::ApproximateMemoryUsage() {
-        return arena_.MemoryUsage();
+        return arena.MemoryUsage();
     }
 
     int MemTable::KeyComparator::operator()(const char *aptr,
@@ -32,12 +35,12 @@ namespace leveldb {
         // Internal keys are encoded as length-prefixed strings.
         Slice a = GetLengthPrefixedSlice(aptr);
         Slice b = GetLengthPrefixedSlice(bptr);
-        return comparator.Compare(a, b);
+        return internalKeyComparator.Compare(a, b);
     }
 
-// Encode a suitable internal key target for "target" and return it.
-// Uses *scratch as scratch space, and the returned pointer will point
-// into this scratch space.
+    // Encode a suitable internal key target for "target" and return it.
+    // Uses *scratch as scratch space, and the returned pointer will point
+    // into this scratch space.
     static const char *EncodeKey(std::string *scratch, const Slice &target) {
         scratch->clear();
         PutVarint32(scratch, target.size());
@@ -55,9 +58,13 @@ namespace leveldb {
 
         ~MemTableIterator() override = default;
 
-        bool Valid() const override { return iter_.Valid(); }
+        bool Valid() const override {
+            return iter_.Valid();
+        }
 
-        void Seek(const Slice &k) override { iter_.Seek(EncodeKey(&tmp_, k)); }
+        void Seek(const Slice &k) override {
+            iter_.Seek(EncodeKey(&tmp_, k));
+        }
 
         void SeekToFirst() override { iter_.SeekToFirst(); }
 
@@ -82,7 +89,7 @@ namespace leveldb {
     };
 
     Iterator *MemTable::NewIterator() {
-        return new MemTableIterator(&table_);
+        return new MemTableIterator(&table);
     }
 
     void MemTable::Add(SequenceNumber sequenceNumber,
@@ -102,25 +109,33 @@ namespace leveldb {
         const size_t encodedLen = VarintLength(internalKeySize) + internalKeySize +
                                   VarintLength(valSize) + valSize;
 
-        char *buf = arena_.Allocate(encodedLen);
-        char *p = EncodeVarint32(buf, internalKeySize);
+        char *allocated = arena.Allocate(encodedLen);
+
+        // 写 internalKeySize
+        char *p = EncodeVarint32(allocated, internalKeySize);
+
+        // 写 原始的key
         ::memcpy(p, key.data(), keySize);
         p += keySize;
 
+        // 写 internalKey后边多的8字节
+        // 对应上了internalKey格式,相比原始的key末尾多了8字节的(sequenceNumber << 8) | valueType
         EncodeFixed64(p, (sequenceNumber << 8) | valueType);
         p += 8;
 
+        // 写 valueSize
         p = EncodeVarint32(p, valSize);
+        // 写 value
         std::memcpy(p, value.data(), valSize);
 
-        assert(p + valSize == buf + encodedLen);
+        assert(p + valSize == allocated + encodedLen);
 
-        table_.Insert(buf);
+        table.Insert(allocated);
     }
 
     bool MemTable::Get(const LookupKey &key, std::string *value, Status *s) {
         Slice memkey = key.memtable_key();
-        Table::Iterator iter(&table_);
+        Table::Iterator iter(&table);
         iter.Seek(memkey.data());
         if (iter.Valid()) {
             // entry format is:
@@ -135,7 +150,7 @@ namespace leveldb {
             const char *entry = iter.key();
             uint32_t key_length;
             const char *key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
-            if (comparator_.comparator.user_comparator()->Compare(
+            if (keyComparator.internalKeyComparator.user_comparator()->Compare(
                     Slice(key_ptr, key_length - 8), key.user_key()) == 0) {
                 // Correct user key
                 const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);

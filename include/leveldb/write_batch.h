@@ -1,7 +1,3 @@
-// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file. See the AUTHORS file for names of contributors.
-//
 // WriteBatch holds a collection of updates to apply atomically to a DB.
 //
 // The updates are applied in the order in which they are added
@@ -27,9 +23,19 @@
 #include "leveldb/status.h"
 
 namespace leveldb {
-
     class Slice;
 
+    // writeBatch数据的格式,要是多个action在1个batch中共享相同的sequence
+    // WriteBatch::rep_ :=
+    //            sequence: fixed64
+    //            count: fixed32
+    //            data: record[count]
+    //        record :=
+    //            kTypeValue varstring varstring         |
+    //            kTypeDeletion varstring
+    //        varstring :=
+    //           len: varint32
+    //           data: uint8[len]
     class LEVELDB_EXPORT WriteBatch {
     public:
         class LEVELDB_EXPORT Handler {
@@ -81,6 +87,6 @@ namespace leveldb {
         std::string rep_;  // See comment in write_batch.cc for the format of rep_
     };
 
-}  // namespace leveldb
+}
 
-#endif  // STORAGE_LEVELDB_INCLUDE_WRITE_BATCH_H_
+#endif

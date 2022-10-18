@@ -207,7 +207,7 @@ class ConcurrentTest {
 
   Arena arena_;
 
-  // SkipList is not protected by mu_.  We just use a single writer
+  // SkipList is not protected by mutex.  We just use a single writer
   // thread to modify it.
   SkipList<Key, Comparator> list_;
 

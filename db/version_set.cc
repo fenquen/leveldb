@@ -106,14 +106,14 @@ namespace leveldb {
 
     static bool AfterFile(const Comparator *ucmp, const Slice *user_key,
                           const FileMetaData *f) {
-        // null user_key occurs before all keys and is therefore never after *f
+        // null userKey occurs before all keys and is therefore never after *f
         return (user_key != nullptr &&
                 ucmp->Compare(*user_key, f->largest.user_key()) > 0);
     }
 
     static bool BeforeFile(const Comparator *ucmp, const Slice *user_key,
                            const FileMetaData *f) {
-        // null user_key occurs after all keys and is therefore never before *f
+        // null userKey occurs after all keys and is therefore never before *f
         return (user_key != nullptr &&
                 ucmp->Compare(*user_key, f->smallest.user_key()) < 0);
     }
@@ -274,7 +274,7 @@ namespace leveldb {
         if (!ParseInternalKey(ikey, &parsed_key)) {
             s->state = kCorrupt;
         } else {
-            if (s->ucmp->Compare(parsed_key.user_key, s->user_key) == 0) {
+            if (s->ucmp->Compare(parsed_key.userKey, s->user_key) == 0) {
                 s->state = (parsed_key.type == kTypeValue) ? kFound : kDeleted;
                 if (s->state == kFound) {
                     s->value->assign(v.data(), v.size());
@@ -320,7 +320,7 @@ namespace leveldb {
             if (index < num_files) {
                 FileMetaData *f = fileMetaDataVecArr[level][index];
                 if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
-                    // All of "f" is past any data for user_key
+                    // All of "f" is past any data for userKey
                 } else {
                     if (!(*func)(arg, level, f)) {
                         return;
@@ -446,7 +446,7 @@ namespace leveldb {
 
         State state;
         state.matches = 0;
-        ForEachOverlapping(ikey.user_key, internal_key, &state, &State::Match);
+        ForEachOverlapping(ikey.userKey, internal_key, &state, &State::Match);
 
         // Must have at least two matches since we want to merge across
         // files. But what if we have a single file that contains many
@@ -634,26 +634,26 @@ namespace leveldb {
             baseVersion->Unref();
         }
 
-        // Apply all of the edits in *edit to the current state.
-        void Apply(VersionEdit *edit) {
+        // Apply all of the edits in *versionEdit to the current state.
+        void Apply(VersionEdit *versionEdit) {
             // Update compaction pointers
-            for (size_t i = 0; i < edit->compact_pointers_.size(); i++) {
-                const int level = edit->compact_pointers_[i].first;
+            for (size_t i = 0; i < versionEdit->compact_pointers_.size(); i++) {
+                const int level = versionEdit->compact_pointers_[i].first;
                 versionSet->compact_pointer_[level] =
-                        edit->compact_pointers_[i].second.Encode().ToString();
+                        versionEdit->compact_pointers_[i].second.Encode().ToString();
             }
 
             // Delete files
-            for (const auto &deleted_file_set_kvp: edit->deleted_files_) {
+            for (const auto &deleted_file_set_kvp: versionEdit->deleted_files_) {
                 const int level = deleted_file_set_kvp.first;
                 const uint64_t number = deleted_file_set_kvp.second;
                 levelStateArr[level].deletedFiles.insert(number);
             }
 
             // Add new files
-            for (size_t i = 0; i < edit->new_files_.size(); i++) {
-                const int level = edit->new_files_[i].first;
-                FileMetaData *f = new FileMetaData(edit->new_files_[i].second);
+            for (size_t i = 0; i < versionEdit->new_files_.size(); i++) {
+                const int level = versionEdit->new_files_[i].first;
+                FileMetaData *f = new FileMetaData(versionEdit->new_files_[i].second);
                 f->refs = 1;
 
                 // We arrange to automatically compact this file after
@@ -878,7 +878,6 @@ namespace leveldb {
                 env_->RemoveFile(new_manifest_file);
             }
         }
-
         return s;
     }
 
@@ -910,6 +909,7 @@ namespace leveldb {
         // MANIFEST-number
         currentFileContentStr.resize(currentFileContentStr.size() - 1);
 
+        // manifest文件保存的是VersionEdit序列化后的内容
         std::string manifestFilePath = dbname_ + "/" + currentFileContentStr;
 
         SequentialFile *sequentialFileManifest;
@@ -938,28 +938,28 @@ namespace leveldb {
             LogReporter logReporter;
             logReporter.status0 = &status;
 
-            log::Reader reader(sequentialFileManifest,
-                               &logReporter,
-                               true,
-                               0 /*initial_offset*/);
+            log::Reader manifestReader(sequentialFileManifest,
+                                       &logReporter,
+                                       true,
+                                       0 /*initial_offset*/);
             Slice dest;
             std::string scratch;
-            while (reader.ReadRecord(&dest, &scratch) && status.ok()) { // 读取裸的byte
+            while (manifestReader.ReadRecord(&dest, &scratch) && status.ok()) { // 读取裸的byte
                 ++readRecordCount;
 
                 VersionEdit versionEdit;
-                status = versionEdit.DecodeFrom(dest); // 还原
+                status = versionEdit.DecodeFrom(dest); // 还原 versionEdit
                 if (status.ok()) {
                     if (versionEdit.has_comparator_ &&
                         versionEdit.comparator_ != icmp_.user_comparator()->Name()) {
                         status = Status::InvalidArgument(
-                                versionEdit.comparator_ + " does not match existing comparator ",
+                                versionEdit.comparator_ + " does not match existing internalKeyComparator ",
                                 icmp_.user_comparator()->Name());
                     }
                 }
 
                 if (status.ok()) {
-                    builder.Apply(&versionEdit);
+                    builder.Apply(&versionEdit); // builder吸收versionEdit
                 }
 
                 if (versionEdit.has_log_number_) {
@@ -1362,7 +1362,7 @@ namespace leveldb {
     }
 
 // Finds minimum file b2=(l2, u2) in level file for which l2 > u1 and
-// user_key(l2) = user_key(u1)
+// userKey(l2) = userKey(u1)
     FileMetaData *FindSmallestBoundaryFile(
             const InternalKeyComparator &icmp,
             const std::vector<FileMetaData *> &level_files,
@@ -1384,12 +1384,12 @@ namespace leveldb {
     }
 
 // Extracts the largest file b1 from |compaction_files| and then searches for a
-// b2 in |level_files| for which user_key(u1) = user_key(l2). If it finds such a
+// b2 in |level_files| for which userKey(u1) = userKey(l2). If it finds such a
 // file b2 (known as a boundary file) it adds it to |compaction_files| and then
 // searches again using this new upper bound.
 //
 // If there are two blocks, b1=(l1, u1) and b2=(l2, u2) and
-// user_key(u1) = user_key(l2), and if we compact b1 but not b2 then a
+// userKey(u1) = userKey(l2), and if we compact b1 but not b2 then a
 // subsequent get operation will yield an incorrect result because it will
 // return the record from b2 in level i rather than from b1 because it searches
 // level by level for records matching the supplied user key.

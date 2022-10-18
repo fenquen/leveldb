@@ -1,0 +1,13 @@
+各类的文件的格式
+    dbname/CURRENT
+    dbname/LOCK
+    dbname/LOG
+    dbname/LOG.old
+    dbname/MANIFEST-[0-9]+
+    dbname/[0-9]+.(log|sst|ldb)
+internalKey格式
+    AppendInternalKey()函数有说明
+    key+sequence<<8|valueType 相比原来的key多了8个byte
+
+
+skipList的level是0起始
