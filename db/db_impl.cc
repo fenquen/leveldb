@@ -132,10 +132,10 @@ namespace leveldb {
 
     DBImpl::DBImpl(const Options &raw_options, const std::string &dbname)
             : env_(raw_options.env),
-              internal_comparator_(raw_options.comparator),
+              internalKeyComparator(raw_options.comparator),
               internal_filter_policy_(raw_options.filterPolicy),
               options_(SanitizeOptions(dbname,
-                                       &internal_comparator_,
+                                       &internalKeyComparator,
                                        &internal_filter_policy_,
                                        raw_options)),
               owns_info_log_(options_.logger != raw_options.logger),
@@ -147,7 +147,7 @@ namespace leveldb {
               db_lock_(nullptr),
               shutting_down_(false),
               background_work_finished_signal_(&mutex),
-              memTable(nullptr),
+              memTable_(nullptr),
               immutableMemTable(nullptr),
               has_imm_(false),
               logfile_(nullptr),
@@ -160,7 +160,7 @@ namespace leveldb {
               versionSet(new VersionSet(dbname_,
                                         &options_,
                                         tableCache,
-                                        &internal_comparator_)) {}
+                                        &internalKeyComparator)) {}
 
     DBImpl::~DBImpl() {
         // Wait for background work to finish.
@@ -176,7 +176,7 @@ namespace leveldb {
         }
 
         delete versionSet;
-        if (memTable != nullptr) memTable->Unref();
+        if (memTable_ != nullptr) memTable_->Unref();
         if (immutableMemTable != nullptr) immutableMemTable->Unref();
         delete tmp_batch_;
         delete log_;
@@ -474,7 +474,7 @@ namespace leveldb {
             "Recovering log #%llu",
             (unsigned long long) logNumber);
 
-        // Read all the records and add to a memtable
+        // Read all the records and add to memTable memtable
         std::string scratch;
         Slice dest;
         WriteBatch writeBatch;
@@ -490,11 +490,11 @@ namespace leveldb {
             WriteBatchInternal::SetContents(&writeBatch, dest);
 
             if (memTable == nullptr) {
-                memTable = new MemTable(internal_comparator_);
+                memTable = new MemTable(internalKeyComparator);
                 memTable->Ref();
             }
 
-            // 把 writeBatch内容 insert到 memTable
+            // 把 writeBatch内容 insert到 memTable_
             status = WriteBatchInternal::InsertInto(&writeBatch, memTable);
             MaybeIgnoreError(&status);
             if (!status.ok()) {
@@ -529,7 +529,7 @@ namespace leveldb {
         if (status.ok() && options_.reuseLogs && lastLog && compactions == 0) {
             assert(logfile_ == nullptr);
             assert(log_ == nullptr);
-            assert(memTable == nullptr);
+            assert(memTable_ == nullptr);
 
             uint64_t lfile_size;
 
@@ -541,18 +541,18 @@ namespace leveldb {
                 log_ = new log::Writer(logfile_, lfile_size);
                 logfile_number_ = logNumber;
                 if (memTable != nullptr) {
-                    memTable = memTable;
+                    memTable_ = memTable;
                     memTable = nullptr;
                 } else {
-                    // memTable can be nullptr if lognum exists but was empty.
-                    memTable = new MemTable(internal_comparator_);
-                    memTable->Ref();
+                    // memTable_ can be nullptr if lognum exists but was empty.
+                    memTable_ = new MemTable(internalKeyComparator);
+                    memTable_->Ref();
                 }
             }
         }
 
         if (memTable != nullptr) {
-            // memTable did not get reused; compact it.
+            // memTable_ did not get reused; compact it.
             if (status.ok()) {
                 *save_manifest = true;
                 status = WriteLevel0Table(memTable, versionEdit, nullptr);
@@ -1156,18 +1156,18 @@ namespace leveldb {
 
         // Collect together all needed child iterators
         std::vector<Iterator *> list;
-        list.push_back(memTable->NewIterator());
-        memTable->Ref();
+        list.push_back(memTable_->NewIterator());
+        memTable_->Ref();
         if (immutableMemTable != nullptr) {
             list.push_back(immutableMemTable->NewIterator());
             immutableMemTable->Ref();
         }
         versionSet->current()->AddIterators(options, &list);
         Iterator *internal_iter =
-                NewMergingIterator(&internal_comparator_, &list[0], list.size());
+                NewMergingIterator(&internalKeyComparator, &list[0], list.size());
         versionSet->current()->Ref();
 
-        IterState *cleanup = new IterState(&mutex, memTable, immutableMemTable, versionSet->current());
+        IterState *cleanup = new IterState(&mutex, memTable_, immutableMemTable, versionSet->current());
         internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
 
         *seed = ++seed_;
@@ -1198,7 +1198,7 @@ namespace leveldb {
             snapshot = versionSet->LastSequence();
         }
 
-        MemTable *mem = memTable;
+        MemTable *mem = memTable_;
         MemTable *imm = immutableMemTable;
         Version *current = versionSet->current();
         mem->Ref();
@@ -1298,7 +1298,7 @@ namespace leveldb {
             // Add to log and apply to memtable.  We can release the lock
             // during this phase since &writer is currently responsible for logging
             // and protects against concurrent loggers and concurrent writes
-            // into memTable.
+            // into memTable_.
             {
                 mutex.Unlock();
 
@@ -1312,7 +1312,7 @@ namespace leveldb {
                     }
                 }
                 if (status.ok()) {
-                    status = WriteBatchInternal::InsertInto(write_batch, memTable);
+                    status = WriteBatchInternal::InsertInto(write_batch, memTable_);
                 }
 
                 mutex.Lock();
@@ -1422,7 +1422,7 @@ namespace leveldb {
                 allow_delay = false;  // Do not delay a single write more than once
                 mutex.Lock();
             } else if (!force &&
-                       (memTable->ApproximateMemoryUsage() <= options_.writeBufferSize)) {
+                       (memTable_->ApproximateMemoryUsage() <= options_.writeBufferSize)) {
                 // There is room in current memtable
                 break;
             } else if (immutableMemTable != nullptr) {
@@ -1450,10 +1450,10 @@ namespace leveldb {
                 logfile_ = lfile;
                 logfile_number_ = new_log_number;
                 log_ = new log::Writer(lfile);
-                immutableMemTable = memTable;
+                immutableMemTable = memTable_;
                 has_imm_.store(true, std::memory_order_release);
-                memTable = new MemTable(internal_comparator_);
-                memTable->Ref();
+                memTable_ = new MemTable(internalKeyComparator);
+                memTable_->Ref();
                 force = false;  // Do not force another compaction if have room
                 MaybeScheduleCompaction();
             }
@@ -1507,8 +1507,8 @@ namespace leveldb {
             return true;
         } else if (in == "approximate-memory-usage") {
             size_t total_usage = options_.blockCache->TotalCharge();
-            if (memTable) {
-                total_usage += memTable->ApproximateMemoryUsage();
+            if (memTable_) {
+                total_usage += memTable_->ApproximateMemoryUsage();
             }
             if (immutableMemTable) {
                 total_usage += immutableMemTable->ApproximateMemoryUsage();
@@ -1566,7 +1566,7 @@ namespace leveldb {
         VersionEdit versionEdit;
         bool saveManifest = false;
         Status status = dbImpl->Recover(&versionEdit, &saveManifest);
-        if (status.ok() && dbImpl->memTable == nullptr) {
+        if (status.ok() && dbImpl->memTable_ == nullptr) {
             // Create new log and a corresponding memtable.
             uint64_t new_log_number = dbImpl->versionSet->NewFileNumber();
             WritableFile *lfile;
@@ -1576,8 +1576,8 @@ namespace leveldb {
                 dbImpl->logfile_ = lfile;
                 dbImpl->logfile_number_ = new_log_number;
                 dbImpl->log_ = new log::Writer(lfile);
-                dbImpl->memTable = new MemTable(dbImpl->internal_comparator_);
-                dbImpl->memTable->Ref();
+                dbImpl->memTable_ = new MemTable(dbImpl->internalKeyComparator);
+                dbImpl->memTable_->Ref();
             }
         }
 
@@ -1595,7 +1595,7 @@ namespace leveldb {
         dbImpl->mutex.Unlock();
 
         if (status.ok()) {
-            assert(dbImpl->memTable != nullptr);
+            assert(dbImpl->memTable_ != nullptr);
             *db = dbImpl;
         } else {
             delete dbImpl;

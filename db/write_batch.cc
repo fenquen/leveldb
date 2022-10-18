@@ -124,7 +124,7 @@ namespace leveldb {
         };
     }  // namespace
 
-    // 用 writeBatch内容 insert到 memTable
+    // 用 writeBatch内容 insert到 memTable_
     Status WriteBatchInternal::InsertInto(const WriteBatch *writeBatch, MemTable *memtable) {
         MemTableInserter memTableInserter;
         memTableInserter.sequenceNumber = WriteBatchInternal::Sequence(writeBatch);

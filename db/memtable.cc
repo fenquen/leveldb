@@ -130,6 +130,7 @@ namespace leveldb {
 
         assert(p + valSize == allocated + encodedLen);
 
+        // skipList
         table.Insert(allocated);
     }
 

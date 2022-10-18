@@ -351,7 +351,7 @@ static void RunConcurrent(int run) {
     TestState state(seed + 1);
     Env::Default()->Schedule(ConcurrentReader, &state);
     state.Wait(TestState::RUNNING);
-    for (int i = 0; i < kSize; i++) {
+    for (int a = 0; a < kSize; a++) {
       state.t_.WriteStep(&rnd);
     }
     state.quit_flag_.store(true, std::memory_order_release);

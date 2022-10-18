@@ -134,6 +134,7 @@ namespace leveldb {
         Comparator const comparator;
         Arena *const arena;  // Arena used for allocations of nodes
 
+        // dummy用途
         Node *const head;
 
         // Modified only by Insert().  Read racily by readers, but stale
@@ -175,9 +176,9 @@ namespace leveldb {
             return next_[n].load(std::memory_order_relaxed);
         }
 
-        void NoBarrier_SetNext(int n, Node *x) {
-            assert(n >= 0);
-            next_[n].store(x, std::memory_order_relaxed);
+        void NoBarrier_SetNext(int level, Node *x) {
+            assert(level >= 0);
+            next_[level].store(x, std::memory_order_relaxed);
         }
 
     private:
@@ -269,22 +270,26 @@ namespace leveldb {
 
     template<typename Key, class Comparator>
     typename SkipList<Key, Comparator>::Node *
-    SkipList<Key, Comparator>::FindGreaterOrEqual(const Key &key, Node **prev) const {
+    SkipList<Key, Comparator>::FindGreaterOrEqual(const Key &key, Node **prevNodeArr) const {
         Node *node = head;
         int level = GetMaxHeight() - 1;
+
         while (true) {
             Node *nextNode = node->Next(level);
+
+            // node在key前边,说明node还是不够大需要继续next()
             if (KeyIsAfterNode(key, nextNode)) {
                 // Keep searching in this list
                 node = nextNode;
                 continue;
             }
 
-            if (prev != nullptr)
-                prev[level] = node;
+            // 当前的node是正好要比key小的
+            if (prevNodeArr != nullptr) {
+                prevNodeArr[level] = node;}
 
             if (level == 0) {
-                return nextNode;
+                return nextNode; // 那个正好比key大的
             }
 
             // Switch to nextNode list
@@ -350,32 +355,39 @@ namespace leveldb {
         // TODO(opt): We can use a barrier-free variant of FindGreaterOrEqual()
         // here since Insert() is externally synchronized.
         Node *prev[kMaxHeight];
-        Node *x = FindGreaterOrEqual(key, prev);
+
+        // 得到的该node是level0上刚好要比该key大的
+        Node *node = FindGreaterOrEqual(key, prev);
 
         // Our data structure does not allow duplicate insertion
-        assert(x == nullptr || !Equal(key, x->key));
+        assert(node == nullptr || !Equal(key, node->key));
 
-        int height = RandomHeight();
-        if (height > GetMaxHeight()) {
-            for (int i = GetMaxHeight(); i < height; i++) {
-                prev[i] = head;
+        int randomHeight = RandomHeight();
+        if (randomHeight > GetMaxHeight()) {
+            // 填补多的height
+            for (int a = GetMaxHeight(); a < randomHeight; a++) {
+                prev[a] = head;
             }
-            // It is ok to mutate maxHeight without any synchronization
-            // with concurrent readers.  A concurrent reader that observes
-            // the new value of maxHeight will see either the old value of
-            // new level pointers from head (nullptr), or a new value set in
-            // the loop below.  In the former case the reader will
-            // immediately drop to the next level since nullptr sorts after all
-            // keys.  In the latter case the reader will use the new node.
-            maxHeight.store(height, std::memory_order_relaxed);
+
+            // It is ok to mutate maxHeight without any synchronization with concurrent readers.
+            //
+            // A concurrent reader that observes the new value of maxHeight will see either the old value of
+            // new level pointers from head (nullptr), or a new value set in the loop below.
+            //
+            // 第1种的话 the reader will 立即 drop to the next level 因为 nullptr is 无限大的  after all keys.
+            //
+            // in the latter case the reader will use the new node
+            maxHeight.store(randomHeight, std::memory_order_relaxed);
         }
 
-        x = NewNode(key, height);
-        for (int i = 0; i < height; i++) {
+        node = NewNode(key, randomHeight);
+
+        // 和普通链表1样的inert
+        for (int i = 0; i < randomHeight; i++) {
             // NoBarrier_SetNext() suffices since we will add a barrier when
-            // we publish a pointer to "x" in prev[i].
-            x->NoBarrier_SetNext(i, prev[i]->NoBarrier_Next(i));
-            prev[i]->SetNext(i, x);
+            // we publish a pointer to "node" in prev[i].
+            node->NoBarrier_SetNext(i, prev[i]->NoBarrier_Next(i));
+            prev[i]->SetNext(i, node);
         }
     }
 
@@ -384,9 +396,9 @@ namespace leveldb {
         Node *x = FindGreaterOrEqual(key, nullptr);
         if (x != nullptr && Equal(key, x->key)) {
             return true;
-        } else {
-            return false;
         }
+
+        return false;
     }
 
 }  // namespace leveldb

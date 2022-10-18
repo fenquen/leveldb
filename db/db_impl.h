@@ -172,14 +172,14 @@ namespace leveldb {
         EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         const Comparator *user_comparator() const {
-            return internal_comparator_.user_comparator();
+            return internalKeyComparator.user_comparator();
         }
 
         // Constant after construction
         Env *const env_;
-        const InternalKeyComparator internal_comparator_;
+        const InternalKeyComparator internalKeyComparator;
         const InternalFilterPolicy internal_filter_policy_;
-        const Options options_;  // options_.internalKeyComparator == &internal_comparator_
+        const Options options_;  // options_.internalKeyComparator == &internalKeyComparator
         const bool owns_info_log_;
         const bool owns_cache_;
         const std::string dbname_; // 是dir的path
@@ -194,7 +194,7 @@ namespace leveldb {
         port::Mutex mutex;
         std::atomic<bool> shutting_down_;
         port::CondVar background_work_finished_signal_ GUARDED_BY(mutex);
-        MemTable *memTable;
+        MemTable *memTable_;
         MemTable *immutableMemTable GUARDED_BY(mutex);  // Memtable being compacted
         std::atomic<bool> has_imm_;         // So bg thread can detect non-null immutableMemTable
         WritableFile *logfile_;
