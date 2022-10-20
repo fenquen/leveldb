@@ -78,21 +78,23 @@ namespace leveldb {
 
             Limiter operator=(const Limiter &) = delete;
 
-            // If another resource is available, acquire it and return true.
-            // Else return false.
             bool Acquire() {
                 int old_acquires_allowed =
                         acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
 
-                if (old_acquires_allowed > 0) return true;
+                if (old_acquires_allowed > 0) {
+                    return true;
+                }
 
+                // 归还
                 acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
+
                 return false;
             }
 
-            // Release a resource acquired by a previous call to Acquire() that returned
-            // true.
-            void Release() { acquires_allowed_.fetch_add(1, std::memory_order_relaxed); }
+            void Release() {
+                acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
+            }
 
         private:
             // The number of available resources.
@@ -694,8 +696,7 @@ namespace leveldb {
                 return Status::OK();
             }
 
-            void Schedule(void (*background_work_function)(void *background_work_arg),
-                          void *background_work_arg) override;
+            void Schedule(void (*func)(void *arg), void *arg) override;
 
             void StartThread(void (*thread_main)(void *thread_main_arg), void *thread_main_arg) override {
                 std::thread new_thread(thread_main, thread_main_arg);
@@ -721,8 +722,7 @@ namespace leveldb {
             }
 
             Status NewLogger(const std::string &filename, Logger **result) override {
-                int fd = ::open(filename.c_str(),
-                                O_APPEND | O_WRONLY | O_CREAT | kOpenBaseFlags, 0644);
+                int fd = ::open(filename.c_str(), O_APPEND | O_WRONLY | O_CREAT | kOpenBaseFlags, 0644);
                 if (fd < 0) {
                     *result = nullptr;
                     return PosixError(filename, errno);
@@ -733,10 +733,10 @@ namespace leveldb {
                     ::close(fd);
                     *result = nullptr;
                     return PosixError(filename, errno);
-                } else {
-                    *result = new PosixLogger(fp);
-                    return Status::OK();
                 }
+
+                *result = new PosixLogger(fp);
+                return Status::OK();
             }
 
             uint64_t NowMicros() override {
@@ -753,16 +753,10 @@ namespace leveldb {
         private:
             void BackgroundThreadMain();
 
-            static void BackgroundThreadEntryPoint(PosixEnv *env) {
-                env->BackgroundThreadMain();
+            static void BackgroundThreadEntryPoint(PosixEnv *posixEnv) {
+                posixEnv->BackgroundThreadMain();
             }
 
-            // Stores the work item data in a Schedule() call.
-            //
-            // Instances are constructed on the thread calling Schedule() and used on the
-            // background thread.
-            //
-            // This structure is thread-safe beacuse it is immutable.
             struct BackgroundWorkItem {
                 explicit BackgroundWorkItem(void (*function)(void *arg), void *arg)
                         : function(function), arg(arg) {}
@@ -772,27 +766,27 @@ namespace leveldb {
                 void *const arg;
             };
 
-            port::Mutex background_work_mutex_;
-            port::CondVar background_work_cv_ GUARDED_BY(background_work_mutex_);
-            bool started_background_thread_ GUARDED_BY(background_work_mutex_);
+            port::Mutex backgroundWorkMutex_;
+            port::CondVar background_work_cv_ GUARDED_BY(backgroundWorkMutex_);
+            bool backgroundTaskHandleThreadStarted_ GUARDED_BY(backgroundWorkMutex_);
 
-            std::queue<BackgroundWorkItem> background_work_queue_
-            GUARDED_BY(background_work_mutex_);
+            std::queue<BackgroundWorkItem> backgroundWorkQueue_ GUARDED_BY(backgroundWorkMutex_);
 
             PosixLockTable locks_;  // Thread-safe.
             Limiter mmap_limiter_;  // Thread-safe.
             Limiter fd_limiter_;    // Thread-safe.
         };
 
-// Return the maximum number of concurrent mmaps.
+        // Return the maximum number of concurrent mmaps.
         int MaxMmaps() { return g_mmap_limit; }
 
-// Return the maximum number of read-only files to keep open.
+        // Return the maximum number of read-only files to keep open.
         int MaxOpenFiles() {
             if (g_open_read_only_file_limit >= 0) {
                 return g_open_read_only_file_limit;
             }
-            struct ::rlimit rlim;
+
+            struct ::rlimit rlim{};
             if (::getrlimit(RLIMIT_NOFILE, &rlim)) {
                 // getrlimit failed, fallback to hard-coded default.
                 g_open_read_only_file_limit = 50;
@@ -807,49 +801,51 @@ namespace leveldb {
 
     }  // namespace
 
-    PosixEnv::PosixEnv() : background_work_cv_(&background_work_mutex_),
-                           started_background_thread_(false),
+    PosixEnv::PosixEnv() : background_work_cv_(&backgroundWorkMutex_),
+                           backgroundTaskHandleThreadStarted_(false),
                            mmap_limiter_(MaxMmaps()),
                            fd_limiter_(MaxOpenFiles()) {
 
     }
 
-    void PosixEnv::Schedule(void (*background_work_function)(void *background_work_arg),
-                            void *background_work_arg) {
-        background_work_mutex_.Lock();
+    void PosixEnv::Schedule(void (*func)(void *arg), void *arg) {
+        backgroundWorkMutex_.Lock();
 
-        // Start the background thread, if we haven't done so already.
-        if (!started_background_thread_) {
-            started_background_thread_ = true;
-            std::thread background_thread(PosixEnv::BackgroundThreadEntryPoint, this);
-            background_thread.detach();
+        // start the background  task handle thread, if we haven't done so already.
+        if (!backgroundTaskHandleThreadStarted_) {
+            backgroundTaskHandleThreadStarted_ = true;
+            std::thread backgroundThread(PosixEnv::BackgroundThreadEntryPoint, this);
+            backgroundThread.detach();
         }
 
         // If the queue is empty, the background thread may be waiting for work.
-        if (background_work_queue_.empty()) {
+        if (backgroundWorkQueue_.empty()) {
             background_work_cv_.Signal();
         }
 
-        background_work_queue_.emplace(background_work_function, background_work_arg);
-        background_work_mutex_.Unlock();
+        backgroundWorkQueue_.emplace(func, arg);
+
+        backgroundWorkMutex_.Unlock();
     }
 
     void PosixEnv::BackgroundThreadMain() {
         while (true) {
-            background_work_mutex_.Lock();
+            backgroundWorkMutex_.Lock();
 
-            // Wait until there is work to be done.
-            while (background_work_queue_.empty()) {
+            // 等生意来
+            while (backgroundWorkQueue_.empty()) {
                 background_work_cv_.Wait();
             }
 
-            assert(!background_work_queue_.empty());
-            auto background_work_function = background_work_queue_.front().function;
-            void *background_work_arg = background_work_queue_.front().arg;
-            background_work_queue_.pop();
+            assert(!backgroundWorkQueue_.empty());
 
-            background_work_mutex_.Unlock();
-            background_work_function(background_work_arg);
+            auto func = backgroundWorkQueue_.front().function;
+            void *arg = backgroundWorkQueue_.front().arg;
+            backgroundWorkQueue_.pop();
+
+            backgroundWorkMutex_.Unlock();
+
+            func(arg);
         }
     }
 

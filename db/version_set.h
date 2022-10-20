@@ -46,16 +46,16 @@ namespace leveldb {
 
     class WritableFile;
 
-// Return the smallest index i such that files[i]->largest >= key.
+// Return the smallestInternalKey_ index i such that files[i]->largestInternalKey_ >= key.
 // Return files.size() if there is no such file.
 // REQUIRES: "files" contains a sorted list of non-overlapping files.
     int FindFile(const InternalKeyComparator &icmp,
                  const std::vector<FileMetaData *> &files, const Slice &key);
 
 // Returns true iff some file in "files" overlaps the user key range
-// [*smallest,*largest].
-// smallest==nullptr represents a key smaller than all keys in the DB.
-// largest==nullptr represents a key largest than all keys in the DB.
+// [*smallestInternalKey_,*largestInternalKey_].
+// smallestInternalKey_==nullptr represents a key smaller than all keys in the DB.
+// largestInternalKey_==nullptr represents a key largestInternalKey_ than all keys in the DB.
 // REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges
 //           in sorted order.
     bool SomeFileOverlapsRange(const InternalKeyComparator &icmp,
@@ -79,8 +79,7 @@ namespace leveldb {
         // REQUIRES: This version has been saved (see VersionSet::SaveTo)
         void AddIterators(const ReadOptions &, std::vector<Iterator *> *iters);
 
-        Status Get(const ReadOptions &, const LookupKey &key, std::string *val,
-                   GetStats *stats);
+        Status Get(const ReadOptions &, const LookupKey &key, std::string *val, GetStats *stats);
 
         // Adds "stats" into the current state.  Returns true if a new
         // compaction may need to be triggered, false otherwise.
@@ -99,17 +98,17 @@ namespace leveldb {
 
         void Unref();
 
-        void GetOverlappingInputs(
-                int level,
-                const InternalKey *begin,  // nullptr means before all keys
-                const InternalKey *end,    // nullptr means after all keys
-                std::vector<FileMetaData *> *inputs);
+        void GetOverlappingInputs(int level,
+                                  const InternalKey *begin,  // nullptr means before all keys
+                                  const InternalKey *end,    // nullptr means after all keys
+                                  std::vector<FileMetaData *> *inputs);
 
         // Returns true iff some file in the specified level overlaps
         // some part of [*smallest_user_key,*largest_user_key].
         // smallest_user_key==nullptr represents a key smaller than all the DB's keys.
-        // largest_user_key==nullptr represents a key largest than all the DB's keys.
-        bool OverlapInLevel(int level, const Slice *smallest_user_key,
+        // largest_user_key==nullptr represents a key largestInternalKey_ than all the DB's keys.
+        bool OverlapInLevel(int level,
+                            const Slice *smallest_user_key,
                             const Slice *largest_user_key);
 
         // Return the level at which we should place a new memtable compaction
@@ -117,7 +116,9 @@ namespace leveldb {
         int PickLevelForMemTableOutput(const Slice &smallest_user_key,
                                        const Slice &largest_user_key);
 
-        int NumFiles(int level) const { return fileMetaDataVecArr[level].size(); }
+        int NumFiles(int level) const {
+            return fileMetaDataVecArr[level].size();
+        }
 
         // Return a human readable string that describes this version's contents.
         std::string DebugString() const;
@@ -177,7 +178,7 @@ namespace leveldb {
     public:
         VersionSet(std::string dbname,
                    const Options *options,
-                   TableCache *table_cache,
+                   TableCache *tableCache,
                    const InternalKeyComparator *);
 
         VersionSet(const VersionSet &) = delete;
@@ -198,7 +199,7 @@ namespace leveldb {
         Status Recover(bool *save_manifest);
 
         // Return the current version.
-        Version *current() const { return current_; }
+        Version *current() const { return currentVersion_; }
 
         // return the current manifest file number
         uint64_t ManifestFileNumber() const {
@@ -269,7 +270,7 @@ namespace leveldb {
 
         // Returns true iff some level needs a compaction.
         bool NeedsCompaction() const {
-            Version *v = current_;
+            Version *v = currentVersion_;
             return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
         }
 
@@ -312,13 +313,15 @@ namespace leveldb {
         // Save current contents to *log
         Status WriteSnapshot(log::Writer *log);
 
-        void AppendVersion(Version *v);
+        void AppendVersion(Version *version);
 
         Env *const env_;
         const std::string dbname_;
         const Options *const options_;
         TableCache *const table_cache_;
-        const InternalKeyComparator icmp_;
+        const InternalKeyComparator internalKeyComparator_;
+
+        // 以下的5个是versionEdit的
         uint64_t next_file_number_;
         uint64_t manifest_file_number_;
         uint64_t last_sequence_;
@@ -329,14 +332,14 @@ namespace leveldb {
         WritableFile *descriptor_file_;
         log::Writer *descriptor_log_;
         Version dummy_versions_;  // Head of circular doubly-linked list of versions.
-        Version *current_;        // == dummy_versions_.prev_
+        Version *currentVersion_;        // == dummy_versions_.prev_
 
         // Per-level key at which the next compaction at that level should start.
         // Either an empty string, or a valid InternalKey.
         std::string compact_pointer_[config::kNumLevels];
     };
 
-// A Compaction encapsulates information about a compaction.
+    // information about a compaction.
     class Compaction {
     public:
         ~Compaction();

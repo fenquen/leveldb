@@ -17,13 +17,13 @@ class Iterator;
 class TableCache;
 class VersionEdit;
 
-// Build a Table file from the contents of *iterator.  The generated file
+// Build a Table file from the contents of *memTableIter.  The generated file
 // will be named according to fileMetaData->number.  On success, the rest of
 // *fileMetaData will be filled with metadata about the generated table.
-// If no data is present in *iterator, fileMetaData->file_size will be set to
+// If no data is present in *memTableIter, fileMetaData->fileSize_ will be set to
 // zero, and no Table file will be produced.
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
-                  TableCache* tableCache, Iterator* iterator, FileMetaData* fileMetaData);
+                  TableCache* tableCache, Iterator* memTableIter, FileMetaData* fileMetaData);
 
 }  // namespace leveldb
 

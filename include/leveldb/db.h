@@ -63,8 +63,8 @@ namespace leveldb {
 
         // Set the database entry for "key" to "value".  Returns OK on success,
         // and a non-OK status on error.
-        // Note: consider setting options.sync = true.
-        virtual Status Put(const WriteOptions &options,
+        // Note: consider setting writeOptions.sync = true.
+        virtual Status Put(const WriteOptions &writeOptions,
                            const Slice &key,
                            const Slice &value) = 0;
 

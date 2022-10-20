@@ -145,7 +145,7 @@ LEVELDB_EXPORT const char* leveldb_iter_value(const leveldb_iterator_t*,
 LEVELDB_EXPORT void leveldb_iter_get_error(const leveldb_iterator_t*,
                                            char** errptr);
 
-/* Write batch */
+/* Write writeBatch_ */
 
 LEVELDB_EXPORT leveldb_writebatch_t* leveldb_writebatch_create(void);
 LEVELDB_EXPORT void leveldb_writebatch_destroy(leveldb_writebatch_t*);

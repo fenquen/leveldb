@@ -9,7 +9,7 @@ namespace leveldb {
     static const int kBlockSize = 4096;
 
     Arena::Arena()
-            : alloc_ptr_(nullptr), alloc_bytes_remaining_(0), memory_usage_(0) {}
+            : alloc_ptr_(nullptr), allocateByteCoutRemaining(0), memory_usage_(0) {}
 
     Arena::~Arena() {
         for (size_t i = 0; i < blockVec.size(); i++) {
@@ -26,11 +26,11 @@ namespace leveldb {
 
         // We waste the remaining space in the current block.
         alloc_ptr_ = AllocateNewBlock(kBlockSize);
-        alloc_bytes_remaining_ = kBlockSize;
+        allocateByteCoutRemaining = kBlockSize;
 
         char *result = alloc_ptr_;
         alloc_ptr_ += bytes;
-        alloc_bytes_remaining_ -= bytes;
+        allocateByteCoutRemaining -= bytes;
         return result;
     }
 
@@ -44,10 +44,10 @@ namespace leveldb {
         size_t needed = bytes + padding;
 
         char *result;
-        if (needed <= alloc_bytes_remaining_) {
+        if (needed <= allocateByteCoutRemaining) {
             result = alloc_ptr_ + padding; // 把padding忽视掉
             alloc_ptr_ += needed;
-            alloc_bytes_remaining_ -= needed;
+            allocateByteCoutRemaining -= needed;
         } else {
             // AllocateFallback always returned aligned memory
             result = AllocateFallback(bytes);

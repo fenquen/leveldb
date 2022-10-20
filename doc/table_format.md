@@ -11,7 +11,7 @@ leveldb File format
     [meta block K]
     [metaindex block]
     [index block]
-    [Footer]        (fixed size; starts at file_size - sizeof(Footer))
+    [Footer]        (fixed size; starts at fileSize_ - sizeof(Footer))
     <end_of_file>
 
 The file contains internal pointers.  Each such pointer is called

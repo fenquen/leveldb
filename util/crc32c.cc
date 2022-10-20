@@ -250,7 +250,7 @@ inline uint32_t ReadUint32LE(const uint8_t* buffer) {
   return DecodeFixed32(reinterpret_cast<const char*>(buffer));
 }
 
-// Returns the smallest address >= the given address that is aligned to N bytes.
+// Returns the smallestInternalKey_ address >= the given address that is aligned to N bytes.
 //
 // N must be a power of two.
 template <int N>

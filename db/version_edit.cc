@@ -33,8 +33,8 @@ namespace leveldb {
         has_prev_log_number_ = false;
         has_next_file_number_ = false;
         has_last_sequence_ = false;
-        deleted_files_.clear();
-        new_files_.clear();
+        deletedLevelFileNumberSet_.clear();
+        addedLevelFileMetaDataVec_.clear();
     }
 
     void VersionEdit::EncodeTo(std::string *dst) const {
@@ -65,20 +65,20 @@ namespace leveldb {
             PutLengthPrefixedSlice(dst, compact_pointers_[i].second.Encode());
         }
 
-        for (const auto &deleted_file_kvp: deleted_files_) {
+        for (const auto &deleted_file_kvp: deletedLevelFileNumberSet_) {
             PutVarint32(dst, kDeletedFile);
             PutVarint32(dst, deleted_file_kvp.first);   // level
             PutVarint64(dst, deleted_file_kvp.second);  // file number
         }
 
-        for (size_t i = 0; i < new_files_.size(); i++) {
-            const FileMetaData &f = new_files_[i].second;
+        for (size_t i = 0; i < addedLevelFileMetaDataVec_.size(); i++) {
+            const FileMetaData &f = addedLevelFileMetaDataVec_[i].second;
             PutVarint32(dst, kNewFile);
-            PutVarint32(dst, new_files_[i].first);  // level
+            PutVarint32(dst, addedLevelFileMetaDataVec_[i].first);  // level
             PutVarint64(dst, f.number);
-            PutVarint64(dst, f.file_size);
-            PutLengthPrefixedSlice(dst, f.smallest.Encode());
-            PutLengthPrefixedSlice(dst, f.largest.Encode());
+            PutVarint64(dst, f.fileSize_);
+            PutLengthPrefixedSlice(dst, f.smallestInternalKey_.Encode());
+            PutLengthPrefixedSlice(dst, f.largestInternalKey_.Encode());
         }
     }
 
@@ -166,7 +166,7 @@ namespace leveldb {
 
                 case kDeletedFile:
                     if (GetLevel(&input, &level) && GetVarint64(&input, &number)) {
-                        deleted_files_.insert(std::make_pair(level, number));
+                        deletedLevelFileNumberSet_.insert(std::make_pair(level, number));
                     } else {
                         msg = "deleted file";
                     }
@@ -174,10 +174,10 @@ namespace leveldb {
 
                 case kNewFile:
                     if (GetLevel(&input, &level) && GetVarint64(&input, &f.number) &&
-                        GetVarint64(&input, &f.file_size) &&
-                        GetInternalKey(&input, &f.smallest) &&
-                        GetInternalKey(&input, &f.largest)) {
-                        new_files_.push_back(std::make_pair(level, f));
+                        GetVarint64(&input, &f.fileSize_) &&
+                        GetInternalKey(&input, &f.smallestInternalKey_) &&
+                        GetInternalKey(&input, &f.largestInternalKey_)) {
+                        addedLevelFileMetaDataVec_.push_back(std::make_pair(level, f));
                     } else {
                         msg = "new-file entry";
                     }
@@ -229,24 +229,24 @@ namespace leveldb {
             r.append(" ");
             r.append(compact_pointers_[i].second.DebugString());
         }
-        for (const auto &deleted_files_kvp: deleted_files_) {
+        for (const auto &deleted_files_kvp: deletedLevelFileNumberSet_) {
             r.append("\n  RemoveFile: ");
             AppendNumberTo(&r, deleted_files_kvp.first);
             r.append(" ");
             AppendNumberTo(&r, deleted_files_kvp.second);
         }
-        for (size_t i = 0; i < new_files_.size(); i++) {
-            const FileMetaData &f = new_files_[i].second;
+        for (size_t i = 0; i < addedLevelFileMetaDataVec_.size(); i++) {
+            const FileMetaData &f = addedLevelFileMetaDataVec_[i].second;
             r.append("\n  AddFile: ");
-            AppendNumberTo(&r, new_files_[i].first);
+            AppendNumberTo(&r, addedLevelFileMetaDataVec_[i].first);
             r.append(" ");
             AppendNumberTo(&r, f.number);
             r.append(" ");
-            AppendNumberTo(&r, f.file_size);
+            AppendNumberTo(&r, f.fileSize_);
             r.append(" ");
-            r.append(f.smallest.DebugString());
+            r.append(f.smallestInternalKey_.DebugString());
             r.append(" .. ");
-            r.append(f.largest.DebugString());
+            r.append(f.largestInternalKey_.DebugString());
         }
         r.append("\n}\n");
         return r;

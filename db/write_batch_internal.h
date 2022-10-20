@@ -19,14 +19,14 @@ namespace leveldb {
         // Return the number of entries in the writeBatch.
         static int Count(const WriteBatch *writeBatch);
 
-        // Set the count for the number of entries in the batch.
+        // Set the count for the number of entries in the writeBatch_.
         static void SetCount(WriteBatch *batch, int n);
 
         // Return the sequence number for the start of this writeBatch.
         static SequenceNumber Sequence(const WriteBatch *writeBatch);
 
         // Store the specified number as the sequence number for the start of
-        // this batch.
+        // this writeBatch_.
         static void SetSequence(WriteBatch *batch, SequenceNumber seq);
 
         static Slice Contents(const WriteBatch *batch) { return Slice(batch->rep_); }
@@ -35,9 +35,9 @@ namespace leveldb {
 
         static void SetContents(WriteBatch *writeBatch, const Slice &contents);
 
-        static Status InsertInto(const WriteBatch *writeBatch, MemTable *memtable);
+        static Status InsertIntoMemTable(const WriteBatch *writeBatch, MemTable *memtable);
 
-        static void Append(WriteBatch *dst, const WriteBatch *src);
+        static void Append(WriteBatch *dest, const WriteBatch *src);
     };
 
 }  // namespace leveldb

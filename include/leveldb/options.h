@@ -97,6 +97,7 @@ namespace leveldb {
         // If null, leveldb will automatically create and use an 8MB internal cache.
         Cache *blockCache = nullptr;
 
+        // ldb文件中的单个的block大小
         // Approximate size of user data packed per block.  Note that the
         // block size specified here corresponds to uncompressed data.  The
         // actual size of the unit read from disk may be smaller if

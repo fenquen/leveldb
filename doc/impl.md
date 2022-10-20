@@ -38,7 +38,7 @@ L >= 1. When the combined size of files in level-L exceeds (10^L) MB (i.e., 10MB
 for level-1, 100MB for level-2, ...), one file in level-L, and all of the
 overlapping files in level-(L+1) are merged to form a set of new files for
 level-(L+1). These merges have the effect of gradually migrating new updates
-from the young level to the largest level using only bulk reads and writes
+from the young level to the largestInternalKey_ level using only bulk reads and writes
 (i.e., minimizing expensive seeks).
 
 ### Manifest

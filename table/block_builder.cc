@@ -38,71 +38,78 @@
 namespace leveldb {
 
     BlockBuilder::BlockBuilder(const Options *options) : options_(options),
-                                                         restarts_(),
+                                                         restartPointVec_(),
                                                          counter_(0),
                                                          finished_(false) {
         assert(options->blockRestartInterval >= 1);
-        restarts_.push_back(0);  // First restart point is at offset 0
+        restartPointVec_.push_back(0);  // First restart point is at offset 0
     }
 
     void BlockBuilder::Reset() {
         buffer_.clear();
-        restarts_.clear();
-        restarts_.push_back(0);  // First restart point is at offset 0
+        restartPointVec_.clear();
+        restartPointVec_.push_back(0);  // First restart point is at offset 0
         counter_ = 0;
         finished_ = false;
-        last_key_.clear();
+        lastKey_.clear();
     }
 
     size_t BlockBuilder::CurrentSizeEstimate() const {
         return (buffer_.size() +                       // Raw data buffer
-                restarts_.size() * sizeof(uint32_t) +  // Restart array
+                restartPointVec_.size() * sizeof(uint32_t) +  // Restart array
                 sizeof(uint32_t));                     // Restart array length
     }
 
     Slice BlockBuilder::Finish() {
         // Append restart array
-        for (size_t i = 0; i < restarts_.size(); i++) {
-            PutFixed32(&buffer_, restarts_[i]);
+        for (unsigned int restart : restartPointVec_) {
+            PutFixed32(&buffer_, restart);
         }
-        PutFixed32(&buffer_, restarts_.size());
+        PutFixed32(&buffer_, restartPointVec_.size());
         finished_ = true;
         return Slice(buffer_);
     }
 
+    // https://blog.csdn.net/xxb249/article/details/94559781
     void BlockBuilder::Add(const Slice &key, const Slice &value) {
-        Slice last_key_piece(last_key_);
+        Slice lastKeyPiece(lastKey_);
+
         assert(!finished_);
         assert(counter_ <= options_->blockRestartInterval);
-        assert(buffer_.empty()  // No values yet?
-               || options_->comparator->Compare(key, last_key_piece) > 0);
-        size_t shared = 0;
+        assert(buffer_.empty() || options_->comparator->Compare(key, lastKeyPiece) > 0);
+
+        // 和前1个的key相比相同的byte数量
+        // 例如 前1个是 hello 后1个是helloaa 那么相同的数量是5
+        size_t sharedByteLen = 0;
         if (counter_ < options_->blockRestartInterval) {
             // See how much sharing to do with previous string
-            const size_t min_length = std::min(last_key_piece.size(), key.size());
-            while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
-                shared++;
+            const size_t min_length = std::min(lastKeyPiece.size(), key.size());
+            while ((sharedByteLen < min_length) && (lastKeyPiece[sharedByteLen] == key[sharedByteLen])) {
+                sharedByteLen++;
             }
         } else {
             // Restart compression
-            restarts_.push_back(buffer_.size());
+            restartPointVec_.push_back(buffer_.size());
             counter_ = 0;
         }
-        const size_t non_shared = key.size() - shared;
 
-        // Add "<shared><non_shared><value_size>" to buffer_
-        PutVarint32(&buffer_, shared);
-        PutVarint32(&buffer_, non_shared);
+        const size_t nonSharedByteLen = key.size() - sharedByteLen;
+
+        // key值相同部分长度
+        PutVarint32(&buffer_, sharedByteLen);
+        // key值不同部分长度
+        PutVarint32(&buffer_, nonSharedByteLen);
+        // value长度
         PutVarint32(&buffer_, value.size());
-
-        // Add string delta to buffer_ followed by value
-        buffer_.append(key.data() + shared, non_shared);
+        // key不同内容
+        buffer_.append(key.data() + sharedByteLen, nonSharedByteLen);
+        // value内容
         buffer_.append(value.data(), value.size());
 
         // Update state
-        last_key_.resize(shared);
-        last_key_.append(key.data() + shared, non_shared);
-        assert(Slice(last_key_) == key);
+        lastKey_.resize(sharedByteLen);
+        lastKey_.append(key.data() + sharedByteLen, nonSharedByteLen);
+        assert(Slice(lastKey_) == key);
         counter_++;
     }
 

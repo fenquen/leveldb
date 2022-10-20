@@ -81,9 +81,9 @@ class Block::Iter : public Iterator {
   uint32_t const restarts_;      // Offset of restart array (list of fixed32)
   uint32_t const num_restarts_;  // Number of uint32_t entries in restart array
 
-  // current_ is offset in data_ of current entry.  >= restarts_ if !Valid
+  // currentVersion_ is offset in data_ of current entry.  >= restartPointVec_ if !Valid
   uint32_t current_;
-  uint32_t restart_index_;  // Index of restart block in which current_ falls
+  uint32_t restart_index_;  // Index of restart block in which currentVersion_ falls
   std::string key_;
   Slice value_;
   Status status_;
@@ -105,7 +105,7 @@ class Block::Iter : public Iterator {
   void SeekToRestartPoint(uint32_t index) {
     key_.clear();
     restart_index_ = index;
-    // current_ will be fixed by ParseNextKey();
+    // currentVersion_ will be fixed by ParseNextKey();
 
     // ParseNextKey() starts at the end of value_, so set value_ accordingly
     uint32_t offset = GetRestartPoint(index);
@@ -143,7 +143,7 @@ class Block::Iter : public Iterator {
   void Prev() override {
     assert(Valid());
 
-    // Scan backwards to a restart point before current_
+    // Scan backwards to a restart point before currentVersion_
     const uint32_t original = current_;
     while (GetRestartPoint(restart_index_) >= original) {
       if (restart_index_ == 0) {

@@ -25,8 +25,8 @@ class FindFileTest : public testing::Test {
            SequenceNumber largest_seq = 100) {
     FileMetaData* f = new FileMetaData;
     f->number = files_.size() + 1;
-    f->smallest = InternalKey(smallest, smallest_seq, kTypeValue);
-    f->largest = InternalKey(largest, largest_seq, kTypeValue);
+    f->smallestInternalKey_ = InternalKey(smallest, smallest_seq, kTypeValue);
+    f->largestInternalKey_ = InternalKey(largest, largest_seq, kTypeValue);
     files_.push_back(f);
   }
 
@@ -198,8 +198,8 @@ class AddBoundaryInputsTest : public testing::Test {
                                    InternalKey largest) {
     FileMetaData* f = new FileMetaData();
     f->number = number;
-    f->smallest = smallest;
-    f->largest = largest;
+    f->smallestInternalKey_ = smallest;
+    f->largestInternalKey_ = largest;
     all_files_.push_back(f);
     return f;
   }

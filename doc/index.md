@@ -77,20 +77,20 @@ be avoided by using the `WriteBatch` class to atomically apply a set of updates:
 std::string value;
 leveldb::Status s = db->Get(leveldb::ReadOptions(), key1, &value);
 if (s.ok()) {
-  leveldb::WriteBatch batch;
-  batch.Delete(key1);
-  batch.Put(key2, value);
-  s = db->Write(leveldb::WriteOptions(), &batch);
+  leveldb::WriteBatch writeBatch_;
+  writeBatch_.Delete(key1);
+  writeBatch_.Put(key2, value);
+  s = db->Write(leveldb::WriteOptions(), &writeBatch_);
 }
 ```
 
 The `WriteBatch` holds a sequence of edits to be made to the database, and these
-edits within the batch are applied in order. Note that we called Delete before
+edits within the writeBatch_ are applied in order. Note that we called Delete before
 Put so that if key1 is identical to key2, we do not end up erroneously dropping
 the value entirely.
 
 Apart from its atomicity benefits, `WriteBatch` may also be used to speed up
-bulk updates by placing lots of individual mutations into the same batch.
+bulk updates by placing lots of individual mutations into the same writeBatch_.
 
 ## Synchronous Writes
 
@@ -126,7 +126,7 @@ write can update a marker that describes where to restart on a crash.)
 `WriteBatch` provides an alternative to asynchronous writes. Multiple updates
 may be placed in the same WriteBatch and applied together using a synchronous
 write (i.e., `write_options.sync` is set to true). The extra cost of the
-synchronous write will be amortized across all of the writes in the batch.
+synchronous write will be amortized across all of the writes in the writeBatch_.
 
 ## Concurrency
 

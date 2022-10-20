@@ -19,14 +19,14 @@ namespace leveldb {
                       Env *env,
                       const Options &options,
                       TableCache *tableCache,
-                      Iterator *iterator,
+                      Iterator *memTableIter,
                       FileMetaData *fileMetaData) {
-        fileMetaData->file_size = 0;
-        iterator->SeekToFirst();
+        fileMetaData->fileSize_ = 0;
+        memTableIter->SeekToFirst();
         std::string ldbFileName = TableFileName(dbname, fileMetaData->number);
 
         Status status;
-        if (iterator->Valid()) {
+        if (memTableIter->Valid()) {
             WritableFile *ldbFile;
             status = env->NewWritableFile(ldbFileName, &ldbFile);
             if (!status.ok()) {
@@ -34,24 +34,25 @@ namespace leveldb {
             }
 
             auto *tableBuilder = new TableBuilder(options, ldbFile);
-            fileMetaData->smallest.DecodeFrom(iterator->key());
+
+            fileMetaData->smallestInternalKey_.DecodeFrom(memTableIter->key());
 
             // 遍历
             Slice key;
-            for (; iterator->Valid(); iterator->Next()) {
-                key = iterator->key();
-                tableBuilder->Add(key, iterator->value());
+            for (; memTableIter->Valid(); memTableIter->Next()) {
+                key = memTableIter->key();
+                tableBuilder->Add(key, memTableIter->value());
             }
 
             if (!key.empty()) {
-                fileMetaData->largest.DecodeFrom(key);
+                fileMetaData->largestInternalKey_.DecodeFrom(key);
             }
 
-            // Finish and check for tableBuilder errors
+            // 收尾
             status = tableBuilder->Finish();
             if (status.ok()) {
-                fileMetaData->file_size = tableBuilder->FileSize();
-                assert(fileMetaData->file_size > 0);
+                fileMetaData->fileSize_ = tableBuilder->FileSize();
+                assert(fileMetaData->fileSize_ > 0);
             }
 
             delete tableBuilder;
@@ -67,21 +68,21 @@ namespace leveldb {
             ldbFile = nullptr;
 
             if (status.ok()) {
-                // Verify that the table is usable
-                Iterator *it = tableCache->NewIterator(ReadOptions(),
-                                                       fileMetaData->number,
-                                                       fileMetaData->file_size);
-                status = it->status();
-                delete it;
+                // verify that the table is usable
+                Iterator *iterator = tableCache->NewIterator(ReadOptions(),
+                                                             fileMetaData->number,
+                                                             fileMetaData->fileSize_);
+                status = iterator->status();
+                delete iterator;
             }
         }
 
-        // Check for input iterator errors
-        if (!iterator->status().ok()) {
-            status = iterator->status();
+        // Check for input memTableIter errors
+        if (!memTableIter->status().ok()) {
+            status = memTableIter->status();
         }
 
-        if (status.ok() && fileMetaData->file_size > 0) {
+        if (status.ok() && fileMetaData->fileSize_ > 0) {
             // Keep it
         } else {
             env->RemoveFile(ldbFileName);

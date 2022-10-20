@@ -203,7 +203,7 @@ parameters are varied.  For the baseline:</p>
 With larger values, LevelDB's per-operation efficiency is swamped by the
 cost of extra copies of large values.</p>
 <h3>B. Batch Writes</h3>
-<p>A batch write is a set of writes that are applied atomically to the underlying database. A single batch of N writes may be significantly faster than N individual writes. The following benchmark writes one thousand batches where each batch contains one thousand 100-byte values. TreeDB does not support batch writes and is omitted from this benchmark.</p>
+<p>A writeBatch_ write is a set of writes that are applied atomically to the underlying database. A single writeBatch_ of N writes may be significantly faster than N individual writes. The following benchmark writes one thousand batches where each writeBatch_ contains one thousand 100-byte values. TreeDB does not support writeBatch_ writes and is omitted from this benchmark.</p>
 <h4>Sequential Writes</h4>
 <table class="bn">
 <tr><td class="c1">LevelDB</td>

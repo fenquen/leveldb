@@ -140,15 +140,15 @@ namespace leveldb {
                               VersionEdit *versionEdit, SequenceNumber *maxSequence)
         EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        Status WriteLevel0Table(MemTable *memTable, VersionEdit *edit, Version *base)
+        Status WriteLevel0Table(MemTable *memTable, VersionEdit *versionEdit, Version *baseVersion)
         EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status MakeRoomForWrite(bool force /* compact even if there is room? */)
         EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        WriteBatch *BuildBatchGroup(Writer **last_writer)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex);
+        WriteBatch *BuildBatchGroup(Writer **lastWriter)EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
+        // 以下都和 compaction 的对应
         void RecordBackgroundError(const Status &s);
 
         void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex);
@@ -161,15 +161,13 @@ namespace leveldb {
 
         void CleanupCompaction(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        Status DoCompactionWork(CompactionState *compact)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex);
+        Status DoCompactionWork(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status OpenCompactionOutputFile(CompactionState *compact);
 
         Status FinishCompactionOutputFile(CompactionState *compact, Iterator *input);
 
-        Status InstallCompactionResults(CompactionState *compact)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex);
+        Status InstallCompactionResults(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         const Comparator *user_comparator() const {
             return internalKeyComparator.user_comparator();
@@ -196,15 +194,18 @@ namespace leveldb {
         port::CondVar background_work_finished_signal_ GUARDED_BY(mutex);
         MemTable *memTable_;
         MemTable *immutableMemTable GUARDED_BY(mutex);  // Memtable being compacted
-        std::atomic<bool> has_imm_;         // So bg thread can detect non-null immutableMemTable
-        WritableFile *logfile_;
-        uint64_t logfile_number_ GUARDED_BY(mutex);
-        log::Writer *log_;
+        std::atomic<bool> hasImmutableMemTable_;         // So bg thread can detect non-null immutableMemTable
+
+        // 以下的是绑定的都在同个logFile上
+        WritableFile *logFileWritable_; // 当前持有的logFile
+        uint64_t logFileNumber_ GUARDED_BY(mutex);
+        log::Writer *logWriter_;
+
         uint32_t seed_ GUARDED_BY(mutex);  // For sampling.
 
         // Queue of writers.
-        std::deque<Writer *> writerDeque GUARDED_BY(mutex);
-        WriteBatch *tmp_batch_ GUARDED_BY(mutex);
+        std::deque<Writer *> writerDeque_ GUARDED_BY(mutex);
+        WriteBatch *tmpWriteBatch_ GUARDED_BY(mutex);
 
         SnapshotList snapshots_ GUARDED_BY(mutex);
 
@@ -212,9 +213,9 @@ namespace leveldb {
         std::set<uint64_t> pendingOutputFileNumberArr GUARDED_BY(mutex);
 
         // Has a background compaction been scheduled or is running?
-        bool background_compaction_scheduled_ GUARDED_BY(mutex);
+        bool backgroundCompactionScheduled_ GUARDED_BY(mutex);
 
-        ManualCompaction *manual_compaction_ GUARDED_BY(mutex);
+        ManualCompaction *manualCompaction_ GUARDED_BY(mutex); // 手动测试用的 实际用不到
 
         VersionSet *const versionSet GUARDED_BY(mutex);
 

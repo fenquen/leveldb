@@ -41,7 +41,7 @@ namespace leveldb {
 
         // Allocation state
         char *alloc_ptr_;
-        size_t alloc_bytes_remaining_;
+        size_t allocateByteCoutRemaining;
 
         // Array of new[] allocated memory blocks
         std::vector<char *> blockVec;
@@ -57,10 +57,10 @@ namespace leveldb {
         // 0-byte allocations, so we disallow them here (we don't need
         // them for our internal use).
         assert(bytes > 0);
-        if (bytes <= alloc_bytes_remaining_) {
+        if (bytes <= allocateByteCoutRemaining) {
             char *result = alloc_ptr_;
             alloc_ptr_ += bytes;
-            alloc_bytes_remaining_ -= bytes;
+            allocateByteCoutRemaining -= bytes;
             return result;
         }
         return AllocateFallback(bytes);

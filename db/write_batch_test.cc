@@ -16,7 +16,7 @@ static std::string PrintContents(WriteBatch* b) {
   MemTable* mem = new MemTable(cmp);
   mem->Ref();
   std::string state;
-  Status s = WriteBatchInternal::InsertInto(b, mem);
+  Status s = WriteBatchInternal::InsertIntoMemTable(b, mem);
   int count = 0;
   Iterator* iter = mem->NewIterator();
   for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {

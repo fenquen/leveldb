@@ -65,7 +65,7 @@ namespace leveldb {
             // The returned iterator is not valid.
             explicit Iterator(const SkipList *list);
 
-            // Returns true iff the iterator is positioned at a valid node.
+            // true if the iterator is positioned at a valid node.
             bool Valid() const;
 
             // Returns the key at the current position.
@@ -92,7 +92,7 @@ namespace leveldb {
             void SeekToLast();
 
         private:
-            const SkipList *list_;
+            const SkipList *skipList_;
             Node *node_;
             // Intentionally copyable
         };
@@ -196,7 +196,7 @@ namespace leveldb {
 
     template<typename Key, class Comparator>
     inline SkipList<Key, Comparator>::Iterator::Iterator(const SkipList *list) {
-        list_ = list;
+        skipList_ = list;
         node_ = nullptr;
     }
 
@@ -222,26 +222,26 @@ namespace leveldb {
         // Instead of using explicit "prev" links, we just search for the
         // last node that falls before key.
         assert(Valid());
-        node_ = list_->FindLessThan(node_->key);
-        if (node_ == list_->head) {
+        node_ = skipList_->FindLessThan(node_->key);
+        if (node_ == skipList_->head) {
             node_ = nullptr;
         }
     }
 
     template<typename Key, class Comparator>
     inline void SkipList<Key, Comparator>::Iterator::Seek(const Key &target) {
-        node_ = list_->FindGreaterOrEqual(target, nullptr);
+        node_ = skipList_->FindGreaterOrEqual(target, nullptr);
     }
 
     template<typename Key, class Comparator>
     inline void SkipList<Key, Comparator>::Iterator::SeekToFirst() {
-        node_ = list_->head->Next(0);
+        node_ = skipList_->head->Next(0);
     }
 
     template<typename Key, class Comparator>
     inline void SkipList<Key, Comparator>::Iterator::SeekToLast() {
-        node_ = list_->FindLast();
-        if (node_ == list_->head) {
+        node_ = skipList_->FindLast();
+        if (node_ == skipList_->head) {
             node_ = nullptr;
         }
     }
@@ -284,9 +284,10 @@ namespace leveldb {
                 continue;
             }
 
-            // 当前的node是正好要比key小的
+            // 当前的node是正好要比key小的 是它的prev
             if (prevNodeArr != nullptr) {
-                prevNodeArr[level] = node;}
+                prevNodeArr[level] = node;
+            }
 
             if (level == 0) {
                 return nextNode; // 那个正好比key大的
@@ -319,21 +320,21 @@ namespace leveldb {
     }
 
     template<typename Key, class Comparator>
-    typename SkipList<Key, Comparator>::Node *SkipList<Key, Comparator>::FindLast()
-    const {
-        Node *x = head;
+    typename SkipList<Key, Comparator>::Node *
+    SkipList<Key, Comparator>::FindLast() const {
+        Node *node = head;
         int level = GetMaxHeight() - 1;
         while (true) {
-            Node *next = x->Next(level);
+            Node *next = node->Next(level);
             if (next == nullptr) {
                 if (level == 0) {
-                    return x;
-                } else {
-                    // Switch to next list
-                    level--;
+                    return node;
                 }
+
+                // switch to next list
+                level--;
             } else {
-                x = next;
+                node = next;
             }
         }
     }
@@ -382,7 +383,7 @@ namespace leveldb {
 
         node = NewNode(key, randomHeight);
 
-        // 和普通链表1样的inert
+        // 和普通链表1样的insert
         for (int i = 0; i < randomHeight; i++) {
             // NoBarrier_SetNext() suffices since we will add a barrier when
             // we publish a pointer to "node" in prev[i].

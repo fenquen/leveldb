@@ -163,7 +163,7 @@ namespace leveldb {
         // A future release will remove this method.
         virtual Status DeleteDir(const std::string &dirname);
 
-        // Store the size of fname in *file_size.
+        // Store the size of fname in *fileSize_.
         virtual Status GetFileSize(const std::string &fname, uint64_t *file_size) = 0;
 
         // Rename file src to target.
@@ -232,14 +232,14 @@ namespace leveldb {
         virtual ~SequentialFile();
 
         // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
-        // written by this routine.  Sets "*result" to the data that was
+        // written by this routine.  Sets "*dest" to the data that was
         // read (including if fewer than "n" bytes were successfully read).
-        // May set "*result" to point at data in "scratch[0..n-1]", so
-        // "scratch[0..n-1]" must be live when "*result" is used.
+        // May set "*dest" to point at data in "scratch[0..n-1]", so
+        // "scratch[0..n-1]" must be live when "*dest" is used.
         // If an error was encountered, returns a non-OK status.
         //
         // REQUIRES: External synchronization
-        virtual Status Read(size_t n, Slice *result, char *scratch) = 0;
+        virtual Status Read(size_t n, Slice *dest, char *scratch) = 0;
 
         // Skip "n" bytes from the file. This is guaranteed to be no
         // slower that reading the same data, but may be faster.

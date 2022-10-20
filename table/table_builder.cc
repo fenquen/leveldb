@@ -19,18 +19,18 @@
 namespace leveldb {
 
     struct TableBuilder::Rep {
-        Rep(const Options &options, WritableFile *f)
+        Rep(const Options &options, WritableFile *writableFile)
                 : options(options),
                   indexBlockOptions(options),
-                  writableFile(f),
+                  writableFile(writableFile),
                   offset(0),
-                  dataBlock(&options),
-                  indexBlock(&indexBlockOptions),
-                  numEntries(0),
+                  dataBlockBuilder_(&options),
+                  indexBlockBuilder_(&indexBlockOptions),
+                  entryCount(0),
                   closed(false),
                   filterBlockBuilder(
                           options.filterPolicy == nullptr ? nullptr : new FilterBlockBuilder(options.filterPolicy)),
-                  pending_index_entry(false) {
+                  pendingIndexEntry_(false) {
             indexBlockOptions.blockRestartInterval = 1;
         }
 
@@ -39,10 +39,10 @@ namespace leveldb {
         WritableFile *writableFile;
         uint64_t offset;
         Status status;
-        BlockBuilder dataBlock;
-        BlockBuilder indexBlock;
+        BlockBuilder dataBlockBuilder_;
+        BlockBuilder indexBlockBuilder_;
         std::string lastKey;
-        int64_t numEntries;
+        int64_t entryCount;
         bool closed;  // Either Finish() or Abandon() has been called.
         FilterBlockBuilder *filterBlockBuilder;
 
@@ -53,8 +53,8 @@ namespace leveldb {
         // "the r" as the key for the index block entry since it is >= all
         // entries in the first block and < all entries in subsequent blocks.
         //
-        // Invariant: r->pending_index_entry is true only if dataBlock is empty.
-        bool pending_index_entry;
+        // Invariant: r->pendingIndexEntry_ is true only if dataBlockBuilder_ is empty.
+        bool pendingIndexEntry_;
 
         // Handle to add to index block
         BlockHandle pending_handle;
@@ -99,17 +99,20 @@ namespace leveldb {
             return;
         }
 
-        if (rep->numEntries > 0) {
+        if (rep->entryCount > 0) {
             assert(rep->options.comparator->Compare(key, Slice(rep->lastKey)) > 0);
         }
 
-        if (rep->pending_index_entry) {
-            assert(rep->dataBlock.empty());
+        if (rep->pendingIndexEntry_) {
+            assert(rep->dataBlockBuilder_.empty());
+
             rep->options.comparator->FindShortestSeparator(&rep->lastKey, key);
-            std::string handle_encoding;
-            rep->pending_handle.EncodeTo(&handle_encoding);
-            rep->indexBlock.Add(rep->lastKey, Slice(handle_encoding));
-            rep->pending_index_entry = false;
+
+            std::string handleEncoding;
+            rep->pending_handle.EncodeTo(&handleEncoding);
+            rep->indexBlockBuilder_.Add(rep->lastKey, Slice(handleEncoding));
+
+            rep->pendingIndexEntry_ = false;
         }
 
         if (rep->filterBlockBuilder != nullptr) {
@@ -117,12 +120,12 @@ namespace leveldb {
         }
 
         rep->lastKey.assign(key.data(), key.size());
-        rep->numEntries++;
-        rep->dataBlock.Add(key, value);
+        rep->entryCount++;
+        rep->dataBlockBuilder_.Add(key, value);
 
-        const size_t estimatedBlockSize = rep->dataBlock.CurrentSizeEstimate();
+        const size_t estimatedBlockSize = rep->dataBlockBuilder_.CurrentSizeEstimate();
         if (estimatedBlockSize >= rep->options.blockSize) {
-            Flush();
+            this->Flush();
         }
     }
 
@@ -134,14 +137,14 @@ namespace leveldb {
             return;
         }
 
-        if (rep->dataBlock.empty()) {
+        if (rep->dataBlockBuilder_.empty()) {
             return;
         }
 
-        assert(!rep->pending_index_entry);
-        WriteBlock(&rep->dataBlock, &rep->pending_handle);
+        assert(!rep->pendingIndexEntry_);
+        WriteBlock(&rep->dataBlockBuilder_, &rep->pending_handle);
         if (ok()) {
-            rep->pending_index_entry = true;
+            rep->pendingIndexEntry_ = true;
             rep->status = rep->writableFile->Flush();
         }
         if (rep->filterBlockBuilder != nullptr) {
@@ -240,14 +243,14 @@ namespace leveldb {
 
         // Write index block
         if (ok()) {
-            if (r->pending_index_entry) {
+            if (r->pendingIndexEntry_) {
                 r->options.comparator->FindShortSuccessor(&r->lastKey);
                 std::string handle_encoding;
                 r->pending_handle.EncodeTo(&handle_encoding);
-                r->indexBlock.Add(r->lastKey, Slice(handle_encoding));
-                r->pending_index_entry = false;
+                r->indexBlockBuilder_.Add(r->lastKey, Slice(handle_encoding));
+                r->pendingIndexEntry_ = false;
             }
-            WriteBlock(&r->indexBlock, &index_block_handle);
+            WriteBlock(&r->indexBlockBuilder_, &index_block_handle);
         }
 
         // Write footer
@@ -271,7 +274,7 @@ namespace leveldb {
         r->closed = true;
     }
 
-    uint64_t TableBuilder::NumEntries() const { return rep_->numEntries; }
+    uint64_t TableBuilder::NumEntries() const { return rep_->entryCount; }
 
     uint64_t TableBuilder::FileSize() const { return rep_->offset; }
 

@@ -11,11 +11,12 @@
 #include "util/coding.h"
 
 namespace leveldb {
-
     // 8-byte sequence number, 4-byte count.
-    static const size_t kHeader = 12;
+    static const size_t WRITE_BATCH_HEADER_LEN = 12;
 
-    WriteBatch::WriteBatch() { Clear(); }
+    WriteBatch::WriteBatch() {
+        Clear();
+    }
 
     WriteBatch::~WriteBatch() = default;
 
@@ -23,18 +24,18 @@ namespace leveldb {
 
     void WriteBatch::Clear() {
         rep_.clear();
-        rep_.resize(kHeader);
+        rep_.resize(WRITE_BATCH_HEADER_LEN);
     }
 
     size_t WriteBatch::ApproximateSize() const { return rep_.size(); }
 
     Status WriteBatch::Iterate(Handler *handler) const {
         Slice input(rep_);
-        if (input.size() < kHeader) {
+        if (input.size() < WRITE_BATCH_HEADER_LEN) {
             return Status::Corruption("malformed WriteBatch (too small)");
         }
 
-        input.remove_prefix(kHeader);
+        input.remove_prefix(WRITE_BATCH_HEADER_LEN);
 
         Slice key, value;
         int found = 0;
@@ -71,7 +72,7 @@ namespace leveldb {
         return Status::OK();
     }
 
-    // 由 writeBatch数据的格式可知 大头的8字节后边的4字节是
+    // 由 writeBatch数据的格式可知 打头的8字节后边的4字节是
     int WriteBatchInternal::Count(const WriteBatch *writeBatch) {
         return DecodeFixed32(writeBatch->rep_.data() + 8);
     }
@@ -125,7 +126,7 @@ namespace leveldb {
     }  // namespace
 
     // 用 writeBatch内容 insert到 memTable_
-    Status WriteBatchInternal::InsertInto(const WriteBatch *writeBatch, MemTable *memtable) {
+    Status WriteBatchInternal::InsertIntoMemTable(const WriteBatch *writeBatch, MemTable *memtable) {
         MemTableInserter memTableInserter;
         memTableInserter.sequenceNumber = WriteBatchInternal::Sequence(writeBatch);
         memTableInserter.memTable = memtable;
@@ -133,14 +134,17 @@ namespace leveldb {
     }
 
     void WriteBatchInternal::SetContents(WriteBatch *writeBatch, const Slice &contents) {
-        assert(contents.size() >= kHeader);
+        assert(contents.size() >= WRITE_BATCH_HEADER_LEN);
         writeBatch->rep_.assign(contents.data(), contents.size());
     }
 
-    void WriteBatchInternal::Append(WriteBatch *dst, const WriteBatch *src) {
-        SetCount(dst, Count(dst) + Count(src));
-        assert(src->rep_.size() >= kHeader);
-        dst->rep_.append(src->rep_.data() + kHeader, src->rep_.size() - kHeader);
+    // src的前12个字节(WRITE_BATCH_HEADER_LEN)会去掉然后融入到dest,dest的count也要相应的更改
+    void WriteBatchInternal::Append(WriteBatch *dest, const WriteBatch *src) {
+        SetCount(dest, Count(dest) + Count(src));
+        assert(src->rep_.size() >= WRITE_BATCH_HEADER_LEN);
+
+        dest->rep_.append(src->rep_.data() + WRITE_BATCH_HEADER_LEN,
+                          src->rep_.size() - WRITE_BATCH_HEADER_LEN);
     }
 
 }  // namespace leveldb

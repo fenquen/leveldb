@@ -57,9 +57,9 @@ class MergingIterator : public Iterator {
 
     // Ensure that all children are positioned after key().
     // If we are moving in the forward direction, it is already
-    // true for all of the non-current_ children since current_ is
-    // the smallest child and key() == current_->key().  Otherwise,
-    // we explicitly position the non-current_ children.
+    // true for all of the non-currentVersion_ children since currentVersion_ is
+    // the smallestInternalKey_ child and key() == currentVersion_->key().  Otherwise,
+    // we explicitly position the non-currentVersion_ children.
     if (direction_ != kForward) {
       for (int i = 0; i < n_; i++) {
         IteratorWrapper* child = &children_[i];
@@ -83,9 +83,9 @@ class MergingIterator : public Iterator {
 
     // Ensure that all children are positioned before key().
     // If we are moving in the reverse direction, it is already
-    // true for all of the non-current_ children since current_ is
-    // the largest child and key() == current_->key().  Otherwise,
-    // we explicitly position the non-current_ children.
+    // true for all of the non-currentVersion_ children since currentVersion_ is
+    // the largestInternalKey_ child and key() == currentVersion_->key().  Otherwise,
+    // we explicitly position the non-currentVersion_ children.
     if (direction_ != kReverse) {
       for (int i = 0; i < n_; i++) {
         IteratorWrapper* child = &children_[i];

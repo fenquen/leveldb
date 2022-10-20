@@ -50,7 +50,7 @@ namespace leveldb {
 
     class MemTableIterator : public Iterator {
     public:
-        explicit MemTableIterator(MemTable::Table *table) : iter_(table) {}
+        explicit MemTableIterator(MemTable::Table *table) : iterator_(table) {}
 
         MemTableIterator(const MemTableIterator &) = delete;
 
@@ -59,32 +59,32 @@ namespace leveldb {
         ~MemTableIterator() override = default;
 
         bool Valid() const override {
-            return iter_.Valid();
+            return iterator_.Valid();
         }
 
         void Seek(const Slice &k) override {
-            iter_.Seek(EncodeKey(&tmp_, k));
+            iterator_.Seek(EncodeKey(&tmp_, k));
         }
 
-        void SeekToFirst() override { iter_.SeekToFirst(); }
+        void SeekToFirst() override { iterator_.SeekToFirst(); }
 
-        void SeekToLast() override { iter_.SeekToLast(); }
+        void SeekToLast() override { iterator_.SeekToLast(); }
 
-        void Next() override { iter_.Next(); }
+        void Next() override { iterator_.Next(); }
 
-        void Prev() override { iter_.Prev(); }
+        void Prev() override { iterator_.Prev(); }
 
-        Slice key() const override { return GetLengthPrefixedSlice(iter_.key()); }
+        Slice key() const override { return GetLengthPrefixedSlice(iterator_.key()); }
 
         Slice value() const override {
-            Slice key_slice = GetLengthPrefixedSlice(iter_.key());
+            Slice key_slice = GetLengthPrefixedSlice(iterator_.key());
             return GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
         }
 
         Status status() const override { return Status::OK(); }
 
     private:
-        MemTable::Table::Iterator iter_;
+        MemTable::Table::Iterator iterator_;
         std::string tmp_;  // For passing to EncodeKey
     };
 

@@ -143,7 +143,7 @@ void DBIter::Next() {
 
   if (direction_ == kReverse) {  // Switch directions?
     direction_ = kForward;
-    // iter_ is pointing just before the entries for this->key(),
+    // iterator_ is pointing just before the entries for this->key(),
     // so advance into the range of entries for this->key() and then
     // use the normal skipping code below.
     if (!iter_->Valid()) {
@@ -161,7 +161,7 @@ void DBIter::Next() {
     // Store in saved_key_ the current key so we skip it below.
     SaveKey(ExtractUserKey(iter_->key()), &saved_key_);
 
-    // iter_ is pointing to current key. We can now safely move to the next to
+    // iterator_ is pointing to current key. We can now safely move to the next to
     // avoid checking current key.
     iter_->Next();
     if (!iter_->Valid()) {
@@ -210,7 +210,7 @@ void DBIter::Prev() {
   assert(valid_);
 
   if (direction_ == kForward) {  // Switch directions?
-    // iter_ is pointing at the current entry.  Scan backwards until
+    // iterator_ is pointing at the current entry.  Scan backwards until
     // the key changes so we can use the normal reverse scanning code.
     assert(iter_->Valid());  // Otherwise valid_ would have been false
     SaveKey(ExtractUserKey(iter_->key()), &saved_key_);

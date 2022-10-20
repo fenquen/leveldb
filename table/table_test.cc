@@ -684,7 +684,7 @@ TEST_F(Harness, Randomized) {
     for (int num_entries = 0; num_entries < 2000;
          num_entries += (num_entries < 50 ? 1 : 200)) {
       if ((num_entries % 10) == 0) {
-        std::fprintf(stderr, "case %d of %d: numEntries = %d\n", (i + 1),
+        std::fprintf(stderr, "case %d of %d: entryCount = %d\n", (i + 1),
                      int(kNumTestArgs), num_entries);
       }
       for (int e = 0; e < num_entries; e++) {
@@ -731,7 +731,7 @@ TEST(MemTableTest, Simple) {
   batch.Put(std::string("k2"), std::string("v2"));
   batch.Put(std::string("k3"), std::string("v3"));
   batch.Put(std::string("largekey"), std::string("vlarge"));
-  ASSERT_TRUE(WriteBatchInternal::InsertInto(&batch, memtable).ok());
+  ASSERT_TRUE(WriteBatchInternal::InsertIntoMemTable(&batch, memtable).ok());
 
   Iterator* iter = memtable->NewIterator();
   iter->SeekToFirst();

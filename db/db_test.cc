@@ -699,7 +699,7 @@ TEST_F(DBTest, GetLevel0Ordering) {
     // Check that we process level-0 files in correct order.  The code
     // below generates two level-0 files where the earlier one comes
     // before the later one in the level-0 file list since the earlier
-    // one has a smaller "smallest" key.
+    // one has a smaller "smallestInternalKey_" key.
     ASSERT_LEVELDB_OK(Put("bar", "b"));
     ASSERT_LEVELDB_OK(Put("foo", "v1"));
     dbfull()->TEST_CompactMemTable();
@@ -1451,7 +1451,7 @@ TEST_F(DBTest, OverlapInLevel0) {
     // Make files spanning the following ranges in level-0:
     //  files[0]  200 .. 900
     //  files[1]  300 .. 500
-    // Note that files are sorted by smallest key.
+    // Note that files are sorted by smallestInternalKey_ key.
     ASSERT_LEVELDB_OK(Put("300", "v300"));
     ASSERT_LEVELDB_OK(Put("500", "v500"));
     dbfull()->TEST_CompactMemTable();
@@ -2253,7 +2253,7 @@ TEST_F(DBTest, Randomized) {
         ASSERT_LEVELDB_OK(model.Delete(WriteOptions(), k));
         ASSERT_LEVELDB_OK(db_->Delete(WriteOptions(), k));
 
-      } else {  // Multi-element batch
+      } else {  // Multi-element writeBatch_
         WriteBatch b;
         const int num = rnd.Uniform(8);
         for (int i = 0; i < num; i++) {
@@ -2261,7 +2261,7 @@ TEST_F(DBTest, Randomized) {
             k = RandomKey(&rnd);
           } else {
             // Periodically re-use the same key from the previous iter, so
-            // we have multiple entries in the write batch for the same key
+            // we have multiple entries in the write writeBatch_ for the same key
           }
           if (rnd.OneIn(2)) {
             v = RandomString(&rnd, rnd.Uniform(10));

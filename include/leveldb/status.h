@@ -37,7 +37,9 @@ namespace leveldb {
         Status &operator=(Status &&rhs) noexcept;
 
         // Return a success status.
-        static Status OK() { return Status(); }
+        static Status OK() {
+            return {};
+        }
 
         // Return error status of an appropriate type.
         static Status NotFound(const Slice &msg, const Slice &msg2 = Slice()) {

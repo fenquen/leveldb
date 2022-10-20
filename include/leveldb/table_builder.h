@@ -83,7 +83,9 @@ namespace leveldb {
         uint64_t FileSize() const;
 
     private:
-        bool ok() const { return status().ok(); }
+        bool ok() const {
+            return status().ok();
+        }
 
         void WriteBlock(BlockBuilder *block, BlockHandle *handle);
 

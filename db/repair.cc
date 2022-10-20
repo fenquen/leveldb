@@ -5,23 +5,23 @@
 // We recover the contents of the descriptor from the other files we find.
 // (1) Any log files are first converted to tables
 // (2) We scan every table to compute
-//     (a) smallest/largest for the table
-//     (b) largest sequence number in the table
+//     (a) smallestInternalKey_/largestInternalKey_ for the table
+//     (b) largestInternalKey_ sequence number in the table
 // (3) We generate descriptor contents:
 //      - log number is set to zero
-//      - next-file-number is set to 1 + largest file number we found
-//      - last-sequence-number is set to largest sequence# found across
+//      - next-file-number is set to 1 + largestInternalKey_ file number we found
+//      - last-sequence-number is set to largestInternalKey_ sequence# found across
 //        all tables (see 2c)
 //      - compaction pointers are cleared
 //      - every table file is added at level 0
 //
 // Possible optimization 1:
 //   (a) Compute total size and use to pick appropriate max-level M
-//   (b) Sort tables by largest sequence# in the table
+//   (b) Sort tables by largestInternalKey_ sequence# in the table
 //   (c) For each table: if it overlaps earlier table, place in level-0,
 //       else place in level-M.
 // Possible optimization 2:
-//   Store per-table metadata (smallest, largest, largest-seq#, ...)
+//   Store per-table metadata (smallestInternalKey_, largestInternalKey_, largestInternalKey_-seq#, ...)
 //   in the table's meta section to speed up ScanTable.
 
 #include "db/builder.h"
@@ -77,7 +77,7 @@ class Repairer {
     if (status.ok()) {
       unsigned long long bytes = 0;
       for (size_t i = 0; i < tables_.size(); i++) {
-        bytes += tables_[i].meta.file_size;
+        bytes += tables_[i].meta.fileSize_;
       }
       Log(options_.logger,
           "**** Repaired leveldb %s; "
@@ -187,7 +187,7 @@ class Repairer {
         continue;
       }
       WriteBatchInternal::SetContents(&batch, record);
-      status = WriteBatchInternal::InsertInto(&batch, mem);
+      status = WriteBatchInternal::InsertIntoMemTable(&batch, mem);
       if (status.ok()) {
         counter += WriteBatchInternal::Count(&batch);
       } else {
@@ -208,7 +208,7 @@ class Repairer {
     mem->Unref();
     mem = nullptr;
     if (status.ok()) {
-      if (meta.file_size > 0) {
+      if (meta.fileSize_ > 0) {
         table_numbers_.push_back(meta.number);
       }
     }
@@ -229,18 +229,18 @@ class Repairer {
     // on checksum verification.
     ReadOptions r;
     r.verify_checksums = options_.paranoid_checks;
-    return table_cache_->NewIterator(r, meta.number, meta.file_size);
+    return table_cache_->NewIterator(r, meta.number, meta.fileSize_);
   }
 
   void ScanTable(uint64_t number) {
     TableInfo t;
     t.meta.number = number;
     std::string fname = TableFileName(dbname_, number);
-    Status status = env_->GetFileSize(fname, &t.meta.file_size);
+    Status status = env_->GetFileSize(fname, &t.meta.fileSize_);
     if (!status.ok()) {
       // Try alternate file name.
       fname = SSTTableFileName(dbname_, number);
-      Status s2 = env_->GetFileSize(fname, &t.meta.file_size);
+      Status s2 = env_->GetFileSize(fname, &t.meta.fileSize_);
       if (s2.ok()) {
         status = Status::OK();
       }
@@ -270,9 +270,9 @@ class Repairer {
       counter++;
       if (empty) {
         empty = false;
-        t.meta.smallest.DecodeFrom(key);
+        t.meta.smallestInternalKey_.DecodeFrom(key);
       }
-      t.meta.largest.DecodeFrom(key);
+      t.meta.largestInternalKey_.DecodeFrom(key);
       if (parsed.sequence > t.max_sequence) {
         t.max_sequence = parsed.sequence;
       }
@@ -319,7 +319,7 @@ class Repairer {
     } else {
       s = builder->Finish();
       if (s.ok()) {
-        t.meta.file_size = builder->FileSize();
+        t.meta.fileSize_ = builder->FileSize();
       }
     }
     delete builder;
@@ -368,8 +368,8 @@ class Repairer {
     for (size_t i = 0; i < tables_.size(); i++) {
       // TODO(opt): separate out into multiple levels
       const TableInfo& t = tables_[i];
-      edit_.AddFile(0, t.meta.number, t.meta.file_size, t.meta.smallest,
-                    t.meta.largest);
+      edit_.AddFile(0, t.meta.number, t.meta.fileSize_, t.meta.smallestInternalKey_,
+                    t.meta.largestInternalKey_);
     }
 
     // std::fprintf(stderr,
