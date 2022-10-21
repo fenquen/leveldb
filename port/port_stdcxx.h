@@ -45,7 +45,7 @@ namespace leveldb {
 
         class CondVar;
 
-// Thinly wraps std::mutex.
+        // Thinly wraps std::mutex.
         class LOCKABLE Mutex {
         public:
             Mutex() = default;
@@ -94,8 +94,7 @@ namespace leveldb {
             Mutex *const mu_;
         };
 
-        inline bool Snappy_Compress(const char *input, size_t length,
-                                    std::string *output) {
+        inline bool Snappy_Compress(const char *input, size_t length, std::string *output) {
 #if HAVE_SNAPPY
             output->resize(snappy::MaxCompressedLength(length));
             size_t outlen;
@@ -103,17 +102,16 @@ namespace leveldb {
             output->resize(outlen);
             return true;
 #else
-            // Silence compiler warnings about unused arguments.
+            // silence compiler warnings about unused arguments.
             (void) input;
             (void) length;
             (void) output;
-#endif  // HAVE_SNAPPY
+#endif
 
             return false;
         }
 
-        inline bool Snappy_GetUncompressedLength(const char *input, size_t length,
-                                                 size_t *result) {
+        inline bool Snappy_GetUncompressedLength(const char *input, size_t length, size_t *result) {
 #if HAVE_SNAPPY
             return snappy::GetUncompressedLength(input, length, result);
 #else

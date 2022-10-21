@@ -15,31 +15,31 @@
 
 namespace leveldb {
 
-    Cache::~Cache() {}
+    Cache::~Cache() = default;
 
     namespace {
 
-// LRU cache implementation
-//
-// Cache entries have an "in_cache" boolean indicating whether the cache has a
-// reference on the entry.  The only ways that this can become false without the
-// entry being passed to its "deleter" are via Erase(), via Insert() when
-// an element with a duplicate key is inserted, or on destruction of the cache.
-//
-// The cache keeps two linked lists of items in the cache.  All items in the
-// cache are in one list or the other, and never both.  Items still referenced
-// by clients but erased from the cache are in neither list.  The lists are:
-// - in-use:  contains the items currently referenced by clients, in no
-//   particular order.  (This list is used for invariant checking.  If we
-//   removed the check, elements that would otherwise be on this list could be
-//   left as disconnected singleton lists.)
-// - LRU:  contains the items not currently referenced by clients, in LRU order
-// Elements are moved between these lists by the Ref() and Unref() methods,
-// when they detect an element in the cache acquiring or losing its only
-// external reference.
+        // LRU cache implementation
+        //
+        // Cache entries have an "in_cache" boolean indicating whether the cache has a
+        // reference on the entry.  The only ways that this can become false without the
+        // entry being passed to its "deleter" are via Erase(), via Insert() when
+        // an element with a duplicate key is inserted, or on destruction of the cache.
+        //
+        // The cache keeps two linked lists of items in the cache.  All items in the
+        // cache are in one list or the other, and never both.  Items still referenced
+        // by clients but erased from the cache are in neither list.  The lists are:
+        // - in-use:  contains the items currently referenced by clients, in no
+        //   particular order.  (This list is used for invariant checking.  If we
+        //   removed the check, elements that would otherwise be on this list could be
+        //   left as disconnected singleton lists.)
+        // - LRU:  contains the items not currently referenced by clients, in LRU order
+        // Elements are moved between these lists by the Ref() and Unref() methods,
+        // when they detect an element in the cache acquiring or losing its only
+        // external reference.
 
-// An entry is a variable length heap-allocated structure.  Entries
-// are kept in a circular doubly linked list ordered by access time.
+        // An entry is a variable length heap-allocated structure.  Entries
+        // are kept in a circular doubly linked list ordered by access time.
         struct LRUHandle {
             void *value;
 
@@ -60,15 +60,15 @@ namespace leveldb {
                 // empty list. List heads never have meaningful keys.
                 assert(next != this);
 
-                return Slice(key_data, key_length);
+                return {key_data, key_length};
             }
         };
 
-// We provide our own simple hash table since it removes a whole bunch
-// of porting hacks and is also faster than some of the built-in hash
-// table implementations in some of the compiler/runtime combinations
-// we have tested.  E.g., readrandom speeds up by ~5% over the g++
-// 4.4.3's builtin hashtable.
+        // We provide our own simple hash table since it removes a whole bunch
+        // of porting hacks and is also faster than some of the built-in hash
+        // table implementations in some of the compiler/runtime combinations
+        // we have tested.  E.g., readrandom speeds up by ~5% over the g++
+        // 4.4.3's builtin hashtable.
         class HandleTable {
         public:
             HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
@@ -150,7 +150,7 @@ namespace leveldb {
             }
         };
 
-// A single shard of sharded cache.
+        // A single shard of sharded cache.
         class LRUCache {
         public:
             LRUCache();
@@ -207,10 +207,11 @@ namespace leveldb {
             // Entries are in use by clients, and have refs >= 2 and in_cache==true.
             LRUHandle in_use_ GUARDED_BY(mutex_);
 
-            HandleTable table_ GUARDED_BY(mutex_);
+            HandleTable handleTable_ GUARDED_BY(mutex_);
         };
 
-        LRUCache::LRUCache() : capacity_(0), usage_(0) {
+        LRUCache::LRUCache() : capacity_(0),
+                               usage_(0) {
             // Make empty circular linked lists.
             lru_.next = &lru_;
             lru_.prev = &lru_;
@@ -266,12 +267,13 @@ namespace leveldb {
         }
 
         Cache::Handle *LRUCache::Lookup(const Slice &key, uint32_t hash) {
-            MutexLock l(&mutex_);
-            LRUHandle *e = table_.Lookup(key, hash);
-            if (e != nullptr) {
-                Ref(e);
+            MutexLock mutexLock(&mutex_);
+            LRUHandle *lruHandle = handleTable_.Lookup(key, hash);
+            if (lruHandle != nullptr) {
+                Ref(lruHandle);
             }
-            return reinterpret_cast<Cache::Handle *>(e);
+
+            return reinterpret_cast<Cache::Handle *>(lruHandle);
         }
 
         void LRUCache::Release(Cache::Handle *handle) {
@@ -301,7 +303,7 @@ namespace leveldb {
                 e->in_cache = true;
                 LRU_Append(&in_use_, e);
                 usage_ += charge;
-                FinishErase(table_.Insert(e));
+                FinishErase(handleTable_.Insert(e));
             } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
                 // next is read by key() in an assert, so it must be initialized
                 e->next = nullptr;
@@ -309,7 +311,7 @@ namespace leveldb {
             while (usage_ > capacity_ && lru_.next != &lru_) {
                 LRUHandle *old = lru_.next;
                 assert(old->refs == 1);
-                bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+                bool erased = FinishErase(handleTable_.Remove(old->key(), old->hash));
                 if (!erased) {  // to avoid unused variable when compiled NDEBUG
                     assert(erased);
                 }
@@ -333,7 +335,7 @@ namespace leveldb {
 
         void LRUCache::Erase(const Slice &key, uint32_t hash) {
             MutexLock l(&mutex_);
-            FinishErase(table_.Remove(key, hash));
+            FinishErase(handleTable_.Remove(key, hash));
         }
 
         void LRUCache::Prune() {
@@ -341,15 +343,15 @@ namespace leveldb {
             while (lru_.next != &lru_) {
                 LRUHandle *e = lru_.next;
                 assert(e->refs == 1);
-                bool erased = FinishErase(table_.Remove(e->key(), e->hash));
+                bool erased = FinishErase(handleTable_.Remove(e->key(), e->hash));
                 if (!erased) {  // to avoid unused variable when compiled NDEBUG
                     assert(erased);
                 }
             }
         }
 
-        static const int kNumShardBits = 4;
-        static const int kNumShards = 1 << kNumShardBits;
+        const int kNumShardBits = 4;
+        const int kNumShards = 1 << kNumShardBits;
 
         class ShardedLRUCache : public Cache {
         private:
@@ -361,7 +363,9 @@ namespace leveldb {
                 return Hash(s.data(), s.size(), 0);
             }
 
-            static uint32_t Shard(uint32_t hash) { return hash >> (32 - kNumShardBits); }
+            static uint32_t Shard(uint32_t hash) {
+                return hash >> (32 - kNumShardBits);
+            }
 
         public:
             explicit ShardedLRUCache(size_t capacity) : last_id_(0) {
@@ -385,7 +389,7 @@ namespace leveldb {
             }
 
             void Release(Handle *handle) override {
-                LRUHandle *h = reinterpret_cast<LRUHandle *>(handle);
+                auto *h = reinterpret_cast<LRUHandle *>(handle);
                 shard_[Shard(h->hash)].Release(handle);
             }
 
@@ -404,15 +408,15 @@ namespace leveldb {
             }
 
             void Prune() override {
-                for (int s = 0; s < kNumShards; s++) {
-                    shard_[s].Prune();
+                for (auto &s: shard_) {
+                    s.Prune();
                 }
             }
 
             size_t TotalCharge() const override {
                 size_t total = 0;
-                for (int s = 0; s < kNumShards; s++) {
-                    total += shard_[s].TotalCharge();
+                for (const auto &s: shard_) {
+                    total += s.TotalCharge();
                 }
                 return total;
             }

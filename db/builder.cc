@@ -23,12 +23,12 @@ namespace leveldb {
                       FileMetaData *fileMetaData) {
         fileMetaData->fileSize_ = 0;
         memTableIter->SeekToFirst();
-        std::string ldbFileName = TableFileName(dbname, fileMetaData->number);
+        std::string ldbFilePath = TableFileName(dbname, fileMetaData->number);
 
         Status status;
         if (memTableIter->Valid()) {
             WritableFile *ldbFile;
-            status = env->NewWritableFile(ldbFileName, &ldbFile);
+            status = env->NewWritableFile(ldbFilePath, &ldbFile);
             if (!status.ok()) {
                 return status;
             }
@@ -68,7 +68,7 @@ namespace leveldb {
             ldbFile = nullptr;
 
             if (status.ok()) {
-                // verify that the table is usable
+                // verify that the table is usable 也有刷缓存的用途
                 Iterator *iterator = tableCache->NewIterator(ReadOptions(),
                                                              fileMetaData->number,
                                                              fileMetaData->fileSize_);
@@ -85,7 +85,7 @@ namespace leveldb {
         if (status.ok() && fileMetaData->fileSize_ > 0) {
             // Keep it
         } else {
-            env->RemoveFile(ldbFileName);
+            env->RemoveFile(ldbFilePath);
         }
 
         return status;

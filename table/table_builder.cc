@@ -43,9 +43,11 @@ namespace leveldb {
         BlockBuilder indexBlockBuilder_;
         std::string lastKey;
         int64_t entryCount;
-        bool closed;  // Either Finish() or Abandon() has been called.
+        bool closed;  // 调用 Finish() or Abandon() be true
         FilterBlockBuilder *filterBlockBuilder;
 
+        // https://blog.csdn.net/xxb249/article/details/94559781
+        // 对应的因该是data index block
         // We do not emit the index entry for a block until we have seen the
         // first key for the next data block.  This allows us to use shorter
         // keys in the index block.  For example, consider a block boundary
@@ -59,7 +61,8 @@ namespace leveldb {
         // Handle to add to index block
         BlockHandle pending_handle;
 
-        std::string compressed_output;
+        // 保存压缩了之后的data
+        std::string compressedOutput_;
     };
 
     TableBuilder::TableBuilder(const Options &options,
@@ -142,67 +145,83 @@ namespace leveldb {
         }
 
         assert(!rep->pendingIndexEntry_);
-        WriteBlock(&rep->dataBlockBuilder_, &rep->pending_handle);
+
+        // 写到了底下的writable的buffer
+        this->WriteBlock(&rep->dataBlockBuilder_, &rep->pending_handle);
+
         if (ok()) {
+            // https://blog.csdn.net/xxb249/article/details/94559781
+            // 说的 dataBlock后边是 metaIndex 和 dataIndex 故而 pendingIndexEntry_是true说的过去
             rep->pendingIndexEntry_ = true;
-            rep->status = rep->writableFile->Flush();
+            rep->status = rep->writableFile->Flush(); // writableFile本身也有buffer,也需要flush()
         }
+
         if (rep->filterBlockBuilder != nullptr) {
             rep->filterBlockBuilder->StartBlock(rep->offset);
         }
     }
 
-    void TableBuilder::WriteBlock(BlockBuilder *block, BlockHandle *handle) {
-        // File format contains a sequence of blocks where each block has:
-        //    block_data: uint8[n]
-        //    type: uint8
-        //    crc: uint32
+    // 单个的block格式
+    //    block_data: uint8[n]
+    //    type: uint8
+    //    crc: uint32
+    void TableBuilder::WriteBlock(BlockBuilder *blockBuilder, BlockHandle *blockHandle) {
         assert(ok());
-        Rep *r = rep_;
-        Slice raw = block->Finish();
 
-        Slice block_contents;
-        CompressionType type = r->options.compression;
+        Rep *rep = rep_;
+        Slice rawContent = blockBuilder->Finish();
+
+        Slice blockContent;
+        CompressionType compressionType = rep->options.compression;
         // TODO(postrelease): Support more compression options: zlib?
-        switch (type) {
+        switch (compressionType) {
             case kNoCompression:
-                block_contents = raw;
+                blockContent = rawContent;
                 break;
-
             case kSnappyCompression: {
-                std::string *compressed = &r->compressed_output;
-                if (port::Snappy_Compress(raw.data(), raw.size(), compressed) &&
-                    compressed->size() < raw.size() - (raw.size() / 8u)) {
-                    block_contents = *compressed;
+                std::string *compressedOutput = &rep->compressedOutput_;
+                if (port::Snappy_Compress(rawContent.data(), rawContent.size(), compressedOutput) &&
+                    compressedOutput->size() < rawContent.size() - (rawContent.size() / 8u)) {
+                    blockContent = *compressedOutput;
                 } else {
-                    // Snappy not supported, or compressed less than 12.5%, so just
-                    // store uncompressed form
-                    block_contents = raw;
-                    type = kNoCompression;
+                    // snappy not supported, or compressedOutput less than 12.5%, store uncompressed form
+                    blockContent = rawContent;
+                    compressionType = kNoCompression;
                 }
                 break;
             }
         }
-        WriteRawBlock(block_contents, type, handle);
-        r->compressed_output.clear();
-        block->Reset();
+
+        this->WriteRawBlock(blockContent, compressionType, blockHandle);
+
+        rep->compressedOutput_.clear();
+        blockBuilder->Reset();
     }
 
-    void TableBuilder::WriteRawBlock(const Slice &block_contents,
-                                     CompressionType type, BlockHandle *handle) {
-        Rep *r = rep_;
-        handle->set_offset(r->offset);
-        handle->set_size(block_contents.size());
-        r->status = r->writableFile->Append(block_contents);
-        if (r->status.ok()) {
-            char trailer[kBlockTrailerSize];
-            trailer[0] = type;
-            uint32_t crc = crc32c::Value(block_contents.data(), block_contents.size());
-            crc = crc32c::Extend(crc, trailer, 1);  // Extend crc to cover block type
+    void TableBuilder::WriteRawBlock(const Slice &blockContent,
+                                     CompressionType compressionType,
+                                     BlockHandle *blockHandle) {
+        Rep *rep = rep_;
+
+        blockHandle->set_offset(rep->offset);
+        blockHandle->set_size(blockContent.size());
+
+        rep->status = rep->writableFile->Append(blockContent);
+
+        if (rep->status.ok()) {
+            char trailer[BLOCK_TRAILER_SIZE];
+
+            // compressionType
+            trailer[0] = compressionType;
+
+            // crc
+            uint32_t crc = crc32c::Value(blockContent.data(), blockContent.size());
+            crc = crc32c::Extend(crc, trailer, 1);  // Extend crc to cover block compressionType
             EncodeFixed32(trailer + 1, crc32c::Mask(crc));
-            r->status = r->writableFile->Append(Slice(trailer, kBlockTrailerSize));
-            if (r->status.ok()) {
-                r->offset += block_contents.size() + kBlockTrailerSize;
+
+            rep->status = rep->writableFile->Append(Slice(trailer, BLOCK_TRAILER_SIZE));
+            if (rep->status.ok()) {
+                rep->offset += blockContent.size() + BLOCK_TRAILER_SIZE;
             }
         }
     }
@@ -211,61 +230,68 @@ namespace leveldb {
         return rep_->status;
     }
 
+    // ldb格式 https://blog.csdn.net/xxb249/article/details/94559781
     Status TableBuilder::Finish() {
-        Rep *r = rep_;
-        Flush();
-        assert(!r->closed);
-        r->closed = true;
+        Rep *rep = rep_;
 
-        BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
+        // dataBlockBuilder_的内容落地
+        this->Flush();
+
+        assert(!rep->closed);
+        rep->closed = true;
+
+        BlockHandle filterBlockHandle;
+        BlockHandle metaIndexBlockHandle;
+        BlockHandle indexBlockHandle;
 
         // Write filter block
-        if (ok() && r->filterBlockBuilder != nullptr) {
-            WriteRawBlock(r->filterBlockBuilder->Finish(), kNoCompression,
-                          &filter_block_handle);
+        if (ok() && rep->filterBlockBuilder != nullptr) {
+            this->WriteRawBlock(rep->filterBlockBuilder->Finish(), kNoCompression, &filterBlockHandle);
         }
 
-        // Write metaindex block
+        // 落地 meta index block
         if (ok()) {
-            BlockBuilder meta_index_block(&r->options);
-            if (r->filterBlockBuilder != nullptr) {
+            BlockBuilder metaIndexBlockBuilder(&rep->options);
+            if (rep->filterBlockBuilder != nullptr) {
                 // Add mapping from "filter.Name" to location of filter data
                 std::string key = "filter.";
-                key.append(r->options.filterPolicy->Name());
+                key.append(rep->options.filterPolicy->Name());
                 std::string handle_encoding;
-                filter_block_handle.EncodeTo(&handle_encoding);
-                meta_index_block.Add(key, handle_encoding);
+                filterBlockHandle.EncodeTo(&handle_encoding);
+                metaIndexBlockBuilder.Add(key, handle_encoding);
             }
 
             // TODO(postrelease): Add stats and other meta blocks
-            WriteBlock(&meta_index_block, &metaindex_block_handle);
+            WriteBlock(&metaIndexBlockBuilder, &metaIndexBlockHandle);
         }
 
-        // Write index block
+        // 落地 index block
         if (ok()) {
-            if (r->pendingIndexEntry_) {
-                r->options.comparator->FindShortSuccessor(&r->lastKey);
+            if (rep->pendingIndexEntry_) {
+                rep->options.comparator->FindShortSuccessor(&rep->lastKey);
                 std::string handle_encoding;
-                r->pending_handle.EncodeTo(&handle_encoding);
-                r->indexBlockBuilder_.Add(r->lastKey, Slice(handle_encoding));
-                r->pendingIndexEntry_ = false;
+                rep->pending_handle.EncodeTo(&handle_encoding);
+                rep->indexBlockBuilder_.Add(rep->lastKey, Slice(handle_encoding));
+                rep->pendingIndexEntry_ = false;
             }
-            WriteBlock(&r->indexBlockBuilder_, &index_block_handle);
+
+            WriteBlock(&rep->indexBlockBuilder_, &indexBlockHandle);
         }
 
         // Write footer
         if (ok()) {
             Footer footer;
-            footer.set_metaindex_handle(metaindex_block_handle);
-            footer.set_index_handle(index_block_handle);
+            footer.set_metaindex_handle(metaIndexBlockHandle);
+            footer.set_index_handle(indexBlockHandle);
             std::string footer_encoding;
             footer.EncodeTo(&footer_encoding);
-            r->status = r->writableFile->Append(footer_encoding);
-            if (r->status.ok()) {
-                r->offset += footer_encoding.size();
+            rep->status = rep->writableFile->Append(footer_encoding);
+            if (rep->status.ok()) {
+                rep->offset += footer_encoding.size();
             }
         }
-        return r->status;
+
+        return rep->status;
     }
 
     void TableBuilder::Abandon() {

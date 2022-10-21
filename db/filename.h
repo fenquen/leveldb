@@ -36,9 +36,7 @@ namespace leveldb {
 // "dbname".
     std::string TableFileName(const std::string &dbname, uint64_t number);
 
-// Return the legacy file name for an sstable with the specified number
-// in the db named by "dbname". The result will be prefixed with
-// "dbname".
+    // 后来的leveldb中sst文件改名为了ldb 这里是为了向前兼容
     std::string SSTTableFileName(const std::string &dbname, uint64_t number);
 
 // dbname/MANIFEST-number

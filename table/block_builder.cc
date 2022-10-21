@@ -60,6 +60,7 @@ namespace leveldb {
                 sizeof(uint32_t));                     // Restart array length
     }
 
+    // 提取还在buffer里的data
     Slice BlockBuilder::Finish() {
         // Append restart array
         for (unsigned int restart : restartPointVec_) {
@@ -88,7 +89,7 @@ namespace leveldb {
                 sharedByteLen++;
             }
         } else {
-            // Restart compression
+            // restart compression
             restartPointVec_.push_back(buffer_.size());
             counter_ = 0;
         }

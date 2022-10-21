@@ -54,6 +54,8 @@ namespace leveldb {
         // REQUIRES: Finish(), Abandon() have not been called
         void Add(const Slice &key, const Slice &value);
 
+        // dataBlockBuilder_的内容落地
+        //
         // Advanced operation: flush any buffered key/value pairs to file.
         // Can be used to ensure that two adjacent entries never live in
         // the same data block.  Most clients should not need to use this method.
@@ -87,9 +89,9 @@ namespace leveldb {
             return status().ok();
         }
 
-        void WriteBlock(BlockBuilder *block, BlockHandle *handle);
+        void WriteBlock(BlockBuilder *blockBuilder, BlockHandle *blockHandle);
 
-        void WriteRawBlock(const Slice &data, CompressionType, BlockHandle *handle);
+        void WriteRawBlock(const Slice &blockContent, CompressionType, BlockHandle *blockHandle);
 
         struct Rep;
         Rep *rep_;

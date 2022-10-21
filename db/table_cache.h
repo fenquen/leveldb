@@ -21,7 +21,9 @@ namespace leveldb {
 
     class TableCache {
     public:
-        TableCache(const std::string &dbname, const Options &options, int entries);
+        TableCache(const std::string &dbname,
+                   const Options &options,
+                   int entries);
 
         ~TableCache();
 
@@ -32,9 +34,9 @@ namespace leveldb {
         // underlies the returned iterator.  The returned "*tableptr" object is owned
         // by the cache and should not be deleted, and is valid for as long as the
         // returned iterator is live.
-        Iterator *NewIterator(const ReadOptions &options,
-                              uint64_t file_number,
-                              uint64_t file_size,
+        Iterator *NewIterator(const ReadOptions &readOptions,
+                              uint64_t fileNumber,
+                              uint64_t fileSize,
                               Table **tableptr = nullptr);
 
         // If a seek to internal key "k" in specified file finds an entry,
@@ -49,8 +51,8 @@ namespace leveldb {
         void Evict(uint64_t file_number);
 
     private:
-        Status FindTable(uint64_t file_number,
-                         uint64_t file_size,
+        Status FindTable(uint64_t fileNumber,
+                         uint64_t fileSize,
                          Cache::Handle **);
 
         Env *const env_;

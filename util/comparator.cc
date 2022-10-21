@@ -41,7 +41,7 @@ class BytewiseComparatorImpl : public Comparator {
     if (diff_index >= min_length) {
       // Do not shorten if one string is a prefix of the other
     } else {
-      uint8_t diff_byte = static_cast<uint8_t>((*start)[diff_index]);
+      auto diff_byte = static_cast<uint8_t>((*start)[diff_index]);
       if (diff_byte < static_cast<uint8_t>(0xff) &&
           diff_byte + 1 < static_cast<uint8_t>(limit[diff_index])) {
         (*start)[diff_index]++;

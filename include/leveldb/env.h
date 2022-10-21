@@ -87,7 +87,7 @@ namespace leveldb {
         // not exist.
         //
         // The returned file may be concurrently accessed by multiple threads.
-        virtual Status NewRandomAccessFile(const std::string &fname, RandomAccessFile **result) = 0;
+        virtual Status NewRandomAccessFile(const std::string &filePath, RandomAccessFile **result) = 0;
 
         // Create an object that writes to a new file with the specified
         // name.  Deletes any existing file with the same name and creates a
@@ -263,16 +263,14 @@ namespace leveldb {
         virtual ~RandomAccessFile();
 
         // Read up to "n" bytes from the file starting at "offset".
-        // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
+        // "scratch[0..n-1]" may be written by this routine.  Sets "*dest"
         // to the data that was read (including if fewer than "n" bytes were
-        // successfully read).  May set "*result" to point at data in
+        // successfully read).  May set "*dest" to point at data in
         // "scratch[0..n-1]", so "scratch[0..n-1]" must be live when
-        // "*result" is used.  If an error was encountered, returns a non-OK
-        // status.
+        // "*dest" is used.  If an error was encountered, returns a non-OK status
         //
         // Safe for concurrent use by multiple threads.
-        virtual Status Read(uint64_t offset, size_t n, Slice *result,
-                            char *scratch) const = 0;
+        virtual Status Read(uint64_t offset, size_t n, Slice *dest, char *scratch) const = 0;
     };
 
 // A file abstraction for sequential writing.  The implementation

@@ -125,9 +125,9 @@ namespace leveldb {
         return result;
     }
 
-    static int TableCacheSize(const Options &sanitized_options) {
+    static int TableCacheSize(const Options &sanitizedOptions) {
         // Reserve ten files or so for other uses and give the rest to TableCache.
-        return sanitized_options.maxOpenFiles - kNumNonTableCacheFiles;
+        return sanitizedOptions.maxOpenFiles - kNumNonTableCacheFiles;
     }
 
     DBImpl::DBImpl(const Options &raw_options, const std::string &dbname)
@@ -813,6 +813,7 @@ namespace leveldb {
         bool isManual = (manualCompaction_ != nullptr);
         InternalKey manualEnd;
 
+        // 实际的场合不会是manual,使用来测试的时候使用的
         if (isManual) {
             ManualCompaction *m = manualCompaction_;
             compaction = versionSet->CompactRange(m->level, m->begin, m->end);
@@ -1498,21 +1499,19 @@ namespace leveldb {
             } else if (!force && (memTable_->ApproximateMemoryUsage() <= options_.writeBufferSize)) {
                 // there is room in current memtable
                 break;
-            } else if (immutableMemTable != nullptr) {
-                // 当前的memtable写满, but the previous one is still being compacted, so we wait.
-                Log(options_.logger, "Current memtable full; waiting...\n");
+            } else if (immutableMemTable != nullptr) { // 当前的memtable写满,而immutableTable is being compacted, wait.
+                Log(options_.logger, "current memtable full; waiting...\n");
                 background_work_finished_signal_.Wait();
             } else if (versionSet->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
                 // There are too many level-0 file
-                Log(options_.logger, "Too many L0 files; waiting...\n");
+                Log(options_.logger, "too many L0 files; waiting...\n");
                 background_work_finished_signal_.Wait();
-            } else { // 切换到了new memtable and trigger compaction of old
+            } else { // 切换到了new memtable and trigger compaction of old(变成了immutable的memTable)
                 assert(versionSet->PrevLogNumber() == 0);
 
                 uint64_t newLogNumber = versionSet->NewFileNumber();
                 WritableFile *newLogFileWritable = nullptr;
-                status = env_->NewWritableFile(LogFileName(dbname_, newLogNumber),
-                                               &newLogFileWritable);
+                status = env_->NewWritableFile(LogFileName(dbname_, newLogNumber), &newLogFileWritable);
                 if (!status.ok()) {
                     // avoid chewing through file number space in a tight loop.
                     versionSet->ReuseFileNumber(newLogNumber);

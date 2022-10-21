@@ -23,7 +23,8 @@ writeBatch的data的格式,要是多个action在1个batch中共享相同的seque
               varstring :=
                  len: varint32
                  data: uint8[len]
- log文件的header
+
+log文件的header
      checksum (4 bytes), length (2 bytes), type (1 byte)
      crc 计算的是 type+后边的跟着的实际的data 函数ReadPhysicalRecord()能够说明
      LOG_HEADER_LEN

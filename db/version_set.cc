@@ -1300,7 +1300,7 @@ namespace leveldb {
     }
 
     Compaction *VersionSet::PickCompaction() {
-        Compaction *c;
+        Compaction *compaction;
         int level;
 
         // We prefer compactions triggered by too much data in a level over
@@ -1311,46 +1311,46 @@ namespace leveldb {
             level = currentVersion_->compaction_level_;
             assert(level >= 0);
             assert(level + 1 < config::kNumLevels);
-            c = new Compaction(options_, level);
+            compaction = new Compaction(options_, level);
 
             // Pick the first file that comes after compact_pointer_[level]
             for (size_t i = 0; i < currentVersion_->fileMetaDataVecArr[level].size(); i++) {
                 FileMetaData *f = currentVersion_->fileMetaDataVecArr[level][i];
                 if (compact_pointer_[level].empty() ||
                     internalKeyComparator_.Compare(f->largestInternalKey_.Encode(), compact_pointer_[level]) > 0) {
-                    c->inputs_[0].push_back(f);
+                    compaction->inputs_[0].push_back(f);
                     break;
                 }
             }
-            if (c->inputs_[0].empty()) {
+            if (compaction->inputs_[0].empty()) {
                 // Wrap-around to the beginning of the key space
-                c->inputs_[0].push_back(currentVersion_->fileMetaDataVecArr[level][0]);
+                compaction->inputs_[0].push_back(currentVersion_->fileMetaDataVecArr[level][0]);
             }
         } else if (seek_compaction) {
             level = currentVersion_->file_to_compact_level_;
-            c = new Compaction(options_, level);
-            c->inputs_[0].push_back(currentVersion_->file_to_compact_);
+            compaction = new Compaction(options_, level);
+            compaction->inputs_[0].push_back(currentVersion_->file_to_compact_);
         } else {
             return nullptr;
         }
 
-        c->input_version_ = currentVersion_;
-        c->input_version_->Ref();
+        compaction->input_version_ = currentVersion_;
+        compaction->input_version_->Ref();
 
         // Files in level 0 may overlap each other, so pick up all overlapping ones
         if (level == 0) {
             InternalKey smallest, largest;
-            GetRange(c->inputs_[0], &smallest, &largest);
+            GetRange(compaction->inputs_[0], &smallest, &largest);
             // Note that the next call will discard the file we placed in
-            // c->inputs_[0] earlier and replace it with an overlapping set
+            // compaction->inputs_[0] earlier and replace it with an overlapping set
             // which will include the picked file.
-            currentVersion_->GetOverlappingInputs(0, &smallest, &largest, &c->inputs_[0]);
-            assert(!c->inputs_[0].empty());
+            currentVersion_->GetOverlappingInputs(0, &smallest, &largest, &compaction->inputs_[0]);
+            assert(!compaction->inputs_[0].empty());
         }
 
-        SetupOtherInputs(c);
+        SetupOtherInputs(compaction);
 
-        return c;
+        return compaction;
     }
 
 // Finds the largestInternalKey_ key in a vector of files. Returns true if files it not

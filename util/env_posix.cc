@@ -181,8 +181,7 @@ namespace leveldb {
                 }
             }
 
-            Status Read(uint64_t offset, size_t n, Slice *result,
-                        char *scratch) const override {
+            Status Read(uint64_t offset, size_t n, Slice *result, char *scratch) const override {
                 int fd = fd_;
                 if (!has_permanent_fd_) {
                     fd = ::open(filename_.c_str(), O_RDONLY | kOpenBaseFlags);
@@ -222,28 +221,32 @@ namespace leveldb {
 // functions.
         class PosixMmapReadableFile final : public RandomAccessFile {
         public:
-            // mmap_base[0, length-1] points to the memory-mapped contents of the file. It
+            // mmap_base[0, fileSize-1] points to the memory-mapped contents of the file. It
             // must be the result of a successful call to mmap(). This instances takes
             // over the ownership of the region.
             //
             // |mmap_limiter| must outlive this instance. The caller must have already
             // aquired the right to use one mmap region, which will be released when this
             // instance is destroyed.
-            PosixMmapReadableFile(std::string filename, char *mmap_base, size_t length,
-                                  Limiter *mmap_limiter)
-                    : mmap_base_(mmap_base),
-                      length_(length),
-                      mmap_limiter_(mmap_limiter),
-                      filename_(std::move(filename)) {}
+            PosixMmapReadableFile(std::string filename,
+                                  char *mmap_base,
+                                  size_t fileSize,
+                                  Limiter *mmap_limiter) : mmap_base_(mmap_base),
+                                                           fileSize_(fileSize),
+                                                           mmapLimiter_(mmap_limiter),
+                                                           filename_(std::move(filename)) {}
 
             ~PosixMmapReadableFile() override {
-                ::munmap(static_cast<void *>(mmap_base_), length_);
-                mmap_limiter_->Release();
+                ::munmap(static_cast<void *>(mmap_base_), fileSize_);
+                mmapLimiter_->Release();
             }
 
-            Status Read(uint64_t offset, size_t n, Slice *result,
+            Status Read(uint64_t offset,
+                        size_t n,
+                        Slice *result,
                         char *scratch) const override {
-                if (offset + n > length_) {
+
+                if (offset + n > fileSize_) {
                     *result = Slice();
                     return PosixError(filename_, EINVAL);
                 }
@@ -254,8 +257,8 @@ namespace leveldb {
 
         private:
             char *const mmap_base_;
-            const size_t length_;
-            Limiter *const mmap_limiter_;
+            const size_t fileSize_;
+            Limiter *const mmapLimiter_;
             const std::string filename_;
         };
 
@@ -541,36 +544,39 @@ namespace leveldb {
                 return Status::OK();
             }
 
-            Status NewRandomAccessFile(const std::string &filename,
-                                       RandomAccessFile **result) override {
+            Status NewRandomAccessFile(const std::string &filePath, RandomAccessFile **result) override {
                 *result = nullptr;
-                int fd = ::open(filename.c_str(), O_RDONLY | kOpenBaseFlags);
+
+                int fd = ::open(filePath.c_str(), O_RDONLY | kOpenBaseFlags);
                 if (fd < 0) {
-                    return PosixError(filename, errno);
+                    return PosixError(filePath, errno);
                 }
 
-                if (!mmap_limiter_.Acquire()) {
-                    *result = new PosixRandomAccessFile(filename, fd, &fd_limiter_);
+                if (!mmapLimiter_.Acquire()) {
+                    *result = new PosixRandomAccessFile(filePath, fd, &fd_limiter_);
                     return Status::OK();
                 }
 
-                uint64_t file_size;
-                Status status = GetFileSize(filename, &file_size);
+                uint64_t fileSize;
+                Status status = GetFileSize(filePath, &fileSize);
                 if (status.ok()) {
-                    void *mmap_base =
-                            ::mmap(/*addr=*/nullptr, file_size, PROT_READ, MAP_SHARED, fd, 0);
+                    // 映射了整个的大小
+                    void *mmap_base = ::mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
                     if (mmap_base != MAP_FAILED) {
-                        *result = new PosixMmapReadableFile(filename,
+                        *result = new PosixMmapReadableFile(filePath,
                                                             reinterpret_cast<char *>(mmap_base),
-                                                            file_size, &mmap_limiter_);
+                                                            fileSize, &mmapLimiter_);
                     } else {
-                        status = PosixError(filename, errno);
+                        status = PosixError(filePath, errno);
                     }
                 }
+
                 ::close(fd);
+
                 if (!status.ok()) {
-                    mmap_limiter_.Release();
+                    mmapLimiter_.Release();
                 }
+
                 return status;
             }
 
@@ -644,7 +650,7 @@ namespace leveldb {
             }
 
             Status GetFileSize(const std::string &filename, uint64_t *size) override {
-                struct ::stat file_stat;
+                struct ::stat file_stat{};
                 if (::stat(filename.c_str(), &file_stat) != 0) {
                     *size = 0;
                     return PosixError(filename, errno);
@@ -773,7 +779,7 @@ namespace leveldb {
             std::queue<BackgroundWorkItem> backgroundWorkQueue_ GUARDED_BY(backgroundWorkMutex_);
 
             PosixLockTable locks_;  // Thread-safe.
-            Limiter mmap_limiter_;  // Thread-safe.
+            Limiter mmapLimiter_;  // Thread-safe.
             Limiter fd_limiter_;    // Thread-safe.
         };
 
@@ -803,7 +809,7 @@ namespace leveldb {
 
     PosixEnv::PosixEnv() : background_work_cv_(&backgroundWorkMutex_),
                            backgroundTaskHandleThreadStarted_(false),
-                           mmap_limiter_(MaxMmaps()),
+                           mmapLimiter_(MaxMmaps()),
                            fd_limiter_(MaxOpenFiles()) {
 
     }

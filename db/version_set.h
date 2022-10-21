@@ -401,11 +401,9 @@ namespace leveldb {
         std::vector<FileMetaData *> grandparents_;
         size_t grandparent_index_;  // Index in grandparent_starts_
         bool seen_key_;             // Some output key has been seen
-        int64_t overlapped_bytes_;  // Bytes of overlap between current output
-        // and grandparent files
+        int64_t overlapped_bytes_;  // Bytes of overlap between current output and grandparent files
 
         // State for implementing IsBaseLevelForKey
-
         // level_ptrs_ holds indices into input_version_->levelStateArr: our state
         // is that we are positioned at one of the file ranges for each
         // higher level than the ones involved in this compaction (i.e. for

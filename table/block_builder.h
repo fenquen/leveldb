@@ -38,7 +38,9 @@ namespace leveldb {
         size_t CurrentSizeEstimate() const;
 
         // Return true iff no entries have been added since the last Reset()
-        bool empty() const { return buffer_.empty(); }
+        bool empty() const {
+            return buffer_.empty();
+        }
 
     private:
         const Options *options_;

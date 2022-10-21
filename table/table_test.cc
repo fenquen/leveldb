@@ -191,7 +191,7 @@ class BlockConstructor : public Constructor {
     BlockContents contents;
     contents.data = data_;
     contents.cachable = false;
-    contents.heap_allocated = false;
+    contents.allocatedFromHeap_ = false;
     block_ = new Block(contents);
     return Status::OK();
   }
@@ -626,7 +626,7 @@ TEST_F(Harness, ZeroRestartPointsInBlock) {
   BlockContents contents;
   contents.data = Slice(data, sizeof(data));
   contents.cachable = false;
-  contents.heap_allocated = false;
+  contents.allocatedFromHeap_ = false;
   Block block(contents);
   Iterator* iter = block.NewIterator(BytewiseComparator());
   iter->SeekToFirst();
