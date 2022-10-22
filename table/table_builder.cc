@@ -30,7 +30,7 @@ namespace leveldb {
                   closed(false),
                   filterBlockBuilder(
                           options.filterPolicy == nullptr ? nullptr : new FilterBlockBuilder(options.filterPolicy)),
-                  pendingIndexEntry_(false) {
+                  pendingIndexBlockEntry_(false) {
             indexBlockOptions.blockRestartInterval = 1;
         }
 
@@ -55,11 +55,11 @@ namespace leveldb {
         // "the r" as the key for the index block entry since it is >= all
         // entries in the first block and < all entries in subsequent blocks.
         //
-        // Invariant: r->pendingIndexEntry_ is true only if dataBlockBuilder_ is empty.
-        bool pendingIndexEntry_;
+        // Invariant: r->pendingIndexBlockEntry_ is true only if dataBlockBuilder_ is empty.
+        bool pendingIndexBlockEntry_;
 
         // Handle to add to index block
-        BlockHandle pending_handle;
+        BlockHandle pendingIndexBlockHandle;
 
         // 保存压缩了之后的data
         std::string compressedOutput_;
@@ -106,16 +106,16 @@ namespace leveldb {
             assert(rep->options.comparator->Compare(key, Slice(rep->lastKey)) > 0);
         }
 
-        if (rep->pendingIndexEntry_) {
+        if (rep->pendingIndexBlockEntry_) {
             assert(rep->dataBlockBuilder_.empty());
 
             rep->options.comparator->FindShortestSeparator(&rep->lastKey, key);
 
             std::string handleEncoding;
-            rep->pending_handle.EncodeTo(&handleEncoding);
+            rep->pendingIndexBlockHandle.EncodeTo(&handleEncoding);
             rep->indexBlockBuilder_.Add(rep->lastKey, Slice(handleEncoding));
 
-            rep->pendingIndexEntry_ = false;
+            rep->pendingIndexBlockEntry_ = false;
         }
 
         if (rep->filterBlockBuilder != nullptr) {
@@ -144,15 +144,15 @@ namespace leveldb {
             return;
         }
 
-        assert(!rep->pendingIndexEntry_);
+        assert(!rep->pendingIndexBlockEntry_);
 
         // 写到了底下的writable的buffer
-        this->WriteBlock(&rep->dataBlockBuilder_, &rep->pending_handle);
+        this->WriteBlock(&rep->dataBlockBuilder_, &rep->pendingIndexBlockHandle);
 
         if (ok()) {
             // https://blog.csdn.net/xxb249/article/details/94559781
             // 说的 dataBlock后边是 metaIndex 和 dataIndex 故而 pendingIndexEntry_是true说的过去
-            rep->pendingIndexEntry_ = true;
+            rep->pendingIndexBlockEntry_ = true;
             rep->status = rep->writableFile->Flush(); // writableFile本身也有buffer,也需要flush()
         }
 
@@ -267,12 +267,12 @@ namespace leveldb {
 
         // 落地 index block
         if (ok()) {
-            if (rep->pendingIndexEntry_) {
+            if (rep->pendingIndexBlockEntry_) {
                 rep->options.comparator->FindShortSuccessor(&rep->lastKey);
                 std::string handle_encoding;
-                rep->pending_handle.EncodeTo(&handle_encoding);
+                rep->pendingIndexBlockHandle.EncodeTo(&handle_encoding);
                 rep->indexBlockBuilder_.Add(rep->lastKey, Slice(handle_encoding));
-                rep->pendingIndexEntry_ = false;
+                rep->pendingIndexBlockEntry_ = false;
             }
 
             WriteBlock(&rep->indexBlockBuilder_, &indexBlockHandle);

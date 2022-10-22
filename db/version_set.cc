@@ -71,8 +71,8 @@ namespace leveldb {
         next_->prev_ = prev_;
 
         // drop references to files
-        for (auto & level : fileMetaDataVecArr) {
-            for (auto f : level) {
+        for (auto &level: fileMetaDataVecArr) {
+            for (auto f: level) {
                 assert(f->refs > 0);
                 f->refs--;
                 if (f->refs <= 0) {
@@ -1353,8 +1353,7 @@ namespace leveldb {
         return compaction;
     }
 
-// Finds the largestInternalKey_ key in a vector of files. Returns true if files it not
-// empty.
+// Finds the largestInternalKey_ key in a vector of files. Returns true if files it not empty
     bool FindLargestKey(const InternalKeyComparator &icmp,
                         const std::vector<FileMetaData *> &files,
                         InternalKey *largest_key) {
@@ -1588,9 +1587,9 @@ namespace leveldb {
         // Scan to find earliest grandparent file that contains key.
         const InternalKeyComparator *icmp = &vset->internalKeyComparator_;
         while (grandparent_index_ < grandparents_.size() &&
-                icmp->Compare(internal_key,
+               icmp->Compare(internal_key,
                              grandparents_[grandparent_index_]->largestInternalKey_.Encode()) >
-                0) {
+               0) {
             if (seen_key_) {
                 overlapped_bytes_ += grandparents_[grandparent_index_]->fileSize_;
             }
