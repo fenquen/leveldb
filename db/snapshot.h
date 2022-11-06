@@ -16,10 +16,12 @@ namespace leveldb {
     // Each SnapshotImpl corresponds to a particular sequence number.
     class SnapshotImpl : public Snapshot {
     public:
-        SnapshotImpl(SequenceNumber sequence_number) : sequence_number_(sequence_number) {}
+        SnapshotImpl(SequenceNumber sequenceNumber) : sequenceNumber_(sequenceNumber) {
 
-        SequenceNumber sequence_number() const {
-            return sequence_number_;
+        }
+
+        SequenceNumber sequenceNumber() const {
+            return sequenceNumber_;
         }
 
     private:
@@ -30,11 +32,11 @@ namespace leveldb {
         SnapshotImpl *prev_;
         SnapshotImpl *next_;
 
-        const SequenceNumber sequence_number_;
+        const SequenceNumber sequenceNumber_;
 
 #if !defined(NDEBUG)
         SnapshotList *list_ = nullptr;
-#endif  // !defined(NDEBUG)
+#endif
     };
 
     class SnapshotList {
@@ -58,17 +60,18 @@ namespace leveldb {
 
         // Creates a SnapshotImpl and appends it to the end of the list.
         SnapshotImpl *New(SequenceNumber sequence_number) {
-            assert(empty() || newest()->sequence_number_ <= sequence_number);
+            assert(empty() || newest()->sequenceNumber_ <= sequence_number);
 
             auto *snapshot = new SnapshotImpl(sequence_number);
 
 #if !defined(NDEBUG)
             snapshot->list_ = this;
-#endif  // !defined(NDEBUG)
+#endif
             snapshot->next_ = &head_;
             snapshot->prev_ = head_.prev_;
             snapshot->prev_->next_ = snapshot;
             snapshot->next_->prev_ = snapshot;
+
             return snapshot;
         }
 
@@ -82,14 +85,13 @@ namespace leveldb {
         void Delete(const SnapshotImpl *snapshot) {
 #if !defined(NDEBUG)
             assert(snapshot->list_ == this);
-#endif  // !defined(NDEBUG)
+#endif
             snapshot->prev_->next_ = snapshot->next_;
             snapshot->next_->prev_ = snapshot->prev_;
             delete snapshot;
         }
-
     private:
-        // Dummy head of doubly-linked list of snapshots
+        // dummy head of doubly-linked list of snapshots
         SnapshotImpl head_;
     };
 

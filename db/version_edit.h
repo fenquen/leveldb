@@ -23,7 +23,7 @@ namespace leveldb {
         }
 
         int refs;
-        int allowedSeeks_;  // seeks allowed until compaction
+        int allowedSeeks_;  // seeks allowed until compaction_
         uint64_t number;
         uint64_t fileSize_;    // file size in byte
         InternalKey smallestInternalKey_;  // Smallest internal key served by table
@@ -42,7 +42,7 @@ namespace leveldb {
 
         void SetComparatorName(const Slice &name) {
             has_comparator_ = true;
-            comparator_ = name.ToString();
+            comparatorName_ = name.ToString();
         }
 
         void SetLogNumber(uint64_t num) {
@@ -73,14 +73,17 @@ namespace leveldb {
         // Add the specified file at the specified number.
         // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
         // REQUIRES: "smallestInternalKey_" and "largestInternalKey_" are smallestInternalKey_ and largestInternalKey_ keys in file
-        void AddFile(int level, uint64_t file, uint64_t file_size,
-                     const InternalKey &smallest, const InternalKey &largest) {
-            FileMetaData f;
-            f.number = file;
-            f.fileSize_ = file_size;
-            f.smallestInternalKey_ = smallest;
-            f.largestInternalKey_ = largest;
-            addedLevelFileMetaDataVec_.push_back(std::make_pair(level, f));
+        void AddFile(int level,
+                     uint64_t file,
+                     uint64_t file_size,
+                     const InternalKey &smallest,
+                     const InternalKey &largest) {
+            FileMetaData fileMetaData;
+            fileMetaData.number = file;
+            fileMetaData.fileSize_ = file_size;
+            fileMetaData.smallestInternalKey_ = smallest;
+            fileMetaData.largestInternalKey_ = largest;
+            addedLevelFileMetaDataVec_.emplace_back(level, fileMetaData);
         }
 
         // Delete the specified "file" from the specified "level".
@@ -97,9 +100,9 @@ namespace leveldb {
     private:
         friend class VersionSet;
 
-        std::string comparator_;
-        uint64_t log_number_;
-        uint64_t prev_log_number_;
+        std::string comparatorName_;
+        uint64_t log_number_; // earlier logs no longer needed
+        uint64_t prev_log_number_; // 0 no older logs needed after recovery
         uint64_t next_file_number_;
         SequenceNumber last_sequence_;
         bool has_comparator_;

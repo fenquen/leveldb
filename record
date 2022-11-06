@@ -29,7 +29,12 @@ log文件的header
      crc 计算的是 type+后边的跟着的实际的data 函数ReadPhysicalRecord()能够说明
      LOG_HEADER_LEN
 
-manifest 文件其实便是一个 log 文件，一个 log record 就是一个 versionEdit
+versionEdit是要落地到manifest文件的
+    https://blog.csdn.net/weixin_36145588/article/details/77978433
+    这样通过原始的version加上1系列的versionedit的记录，就可以恢复到最新状态
+
+manifest文件使用了和log相同的记录格式
+    log的实际数据再是序列化后的versionEdit格式
     https://zhuanlan.zhihu.com/p/149794634
 
 manifest文件中的logRecord的payload是versionEdit
@@ -38,7 +43,7 @@ log文件中的logRecord的payLoad是writeBatch内容
 似乎logFile的生命周期和memTable相同 落盘成功写到ldb之后，日志文件就可以去掉了
     MakeRoomForWrite() 体现
 
-Compaction 是比较耗费资源的操作，
+compaction 是比较耗费资源的操作，
 为了不影响线上的读写操作，LevelDB 将 Compaction 工作交给一个单一的异步线程来完成
 如工作量巨大，这个单一的异步线程也会有点吃不消
 当异步线程吃不消的时候，线上内存的读写操作也会收到影响

@@ -35,6 +35,7 @@ namespace leveldb {
 
             auto *tableBuilder = new TableBuilder(options, ldbFile);
 
+            // 遍历前得到smallestInternalKey_
             fileMetaData->smallestInternalKey_.DecodeFrom(memTableIter->key());
 
             // 遍历
@@ -44,6 +45,7 @@ namespace leveldb {
                 tableBuilder->Add(key, memTableIter->value());
             }
 
+            // 遍历后得到largestInternalKey_
             if (!key.empty()) {
                 fileMetaData->largestInternalKey_.DecodeFrom(key);
             }
@@ -68,7 +70,8 @@ namespace leveldb {
             ldbFile = nullptr;
 
             if (status.ok()) {
-                // verify that the table is usable 也有刷缓存的用途
+                // verify that the table is usable 确认刚刚的写ldb是不是正确的 也有刷缓存的用途
+                // twoLevelIterator
                 Iterator *iterator = tableCache->NewIterator(ReadOptions(),
                                                              fileMetaData->number,
                                                              fileMetaData->fileSize_);

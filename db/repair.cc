@@ -12,7 +12,7 @@
 //      - next-file-number is set to 1 + largestInternalKey_ file number we found
 //      - last-sequence-number is set to largestInternalKey_ sequence# found across
 //        all tables (see 2c)
-//      - compaction pointers are cleared
+//      - compaction_ pointers are cleared
 //      - every table file is added at level 0
 //
 // Possible optimization 1:
@@ -225,10 +225,10 @@ class Repairer {
   }
 
   Iterator* NewTableIterator(const FileMetaData& meta) {
-    // Same as compaction iterators: if paranoid_checks are on, turn
+    // Same as compaction_ iterators: if paranoid_checks are on, turn
     // on checksum verification.
     ReadOptions r;
-    r.verify_checksums = options_.paranoid_checks;
+    r.verifyChecksums_ = options_.paranoid_checks;
     return table_cache_->NewIterator(r, meta.number, meta.fileSize_);
   }
 
@@ -295,7 +295,7 @@ class Repairer {
     // We will copy src contents to a new table and then rename the
     // new table over the source.
 
-    // Create builder.
+    // Create tableBuilder_.
     std::string copy = TableFileName(dbname_, next_file_number_++);
     WritableFile* file;
     Status s = env_->NewWritableFile(copy, &file);
@@ -373,7 +373,7 @@ class Repairer {
     }
 
     // std::fprintf(stderr,
-    //              "NewDescriptor:\n%s\n", edit_.DebugString().c_str());
+    //              "NewDescriptor:\n%s\n", versionEdit_.DebugString().c_str());
     {
       log::Writer log(file);
       std::string record;

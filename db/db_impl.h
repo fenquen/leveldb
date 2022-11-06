@@ -89,16 +89,16 @@ namespace leveldb {
         struct CompactionState;
         struct Writer;
 
-        // Information for a manual compaction
+        // Information for a manual compaction_
         struct ManualCompaction {
             int level;
             bool done;
             const InternalKey *begin;  // null means beginning of key range
             const InternalKey *end;    // null means end of key range
-            InternalKey tmp_storage;   // Used to keep track of compaction progress
+            InternalKey tmp_storage;   // Used to keep track of compaction_ progress
         };
 
-        // Per level compaction stats.  compactionStatArr[level] stores the stats for
+        // Per level compaction_ stats.  compactionStatArr[level] stores the stats for
         // compactions that produced data for the specified "level".
         struct CompactionStats {
             CompactionStats() : micros(0), bytes_read(0), bytes_written(0) {}
@@ -140,15 +140,16 @@ namespace leveldb {
                               VersionEdit *versionEdit, SequenceNumber *maxSequence)
         EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        Status WriteLevel0Table(MemTable *memTable, VersionEdit *versionEdit, Version *baseVersion)
-        EXCLUSIVE_LOCKS_REQUIRED(mutex);
+        Status WriteLevel0Table(MemTable *memTable,
+                                VersionEdit *versionEdit,
+                                Version *baseVersion) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         Status MakeRoomForWrite(bool force /* compact even if there is room? */)
         EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
         WriteBatch *BuildBatchGroup(Writer **lastWriter)EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        // 以下都和 compaction 的对应
+        // 以下都和 compaction_ 的对应
         void RecordBackgroundError(const Status &s);
 
         void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex);
@@ -161,15 +162,15 @@ namespace leveldb {
 
         void CleanupCompaction(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        Status DoCompactionWork(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
+        Status DoCompactionWork(CompactionState *compactionState) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        Status OpenCompactionOutputFile(CompactionState *compact);
+        Status OpenCompactionOutputFile(CompactionState *compactionState);
 
         Status FinishCompactionOutputFile(CompactionState *compact, Iterator *input);
 
         Status InstallCompactionResults(CompactionState *compact) EXCLUSIVE_LOCKS_REQUIRED(mutex);
 
-        const Comparator *user_comparator() const {
+        const Comparator *userComparator() const {
             return internalKeyComparator.user_comparator();
         }
 
@@ -190,11 +191,11 @@ namespace leveldb {
 
         // below is protected by mutex
         port::Mutex mutex;
-        std::atomic<bool> shutting_down_;
+        std::atomic<bool> shuttingDown;
         port::CondVar background_work_finished_signal_ GUARDED_BY(mutex);
         MemTable *memTable_;
-        MemTable *immutableMemTable GUARDED_BY(mutex);  // Memtable being compacted
-        std::atomic<bool> hasImmutableMemTable_;         // So bg thread can detect non-null immutableMemTable
+        MemTable *immutableMemTable_ GUARDED_BY(mutex);  // Memtable being compacted
+        std::atomic<bool> hasImmutableMemTable_;         // So bg thread can detect non-null immutableMemTable_
 
         // 以下的是绑定的都在同个logFile上
         WritableFile *logFileWritable_; // 当前持有的logFile
@@ -207,12 +208,12 @@ namespace leveldb {
         std::deque<Writer *> writerDeque_ GUARDED_BY(mutex);
         WriteBatch *tmpWriteBatch_ GUARDED_BY(mutex);
 
-        SnapshotList snapshots_ GUARDED_BY(mutex);
+        SnapshotList snapshotList_ GUARDED_BY(mutex);
 
         // Set of table files to protect from deletion because they are part of ongoing compactions.
         std::set<uint64_t> pendingOutputFileNumberArr GUARDED_BY(mutex);
 
-        // Has a background compaction been scheduled or is running?
+        // Has a background compaction_ been scheduled or is running?
         bool backgroundCompactionScheduled_ GUARDED_BY(mutex);
 
         ManualCompaction *manualCompaction_ GUARDED_BY(mutex); // 手动测试用的 实际用不到

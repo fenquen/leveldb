@@ -21,9 +21,10 @@ namespace leveldb {
 
     // Grouping of constants.  We may want to make some of these parameters set via options.
     namespace config {
+        // ldb文件level数量上限
         static const int kNumLevels = 7;
 
-        // Level-0 compaction is started when we hit such many files.
+        // Level-0 compaction_ is started when level0 的ldb文件数量达到 such many files.
         static const int level0_CompactionTrigger = 4;
 
         // Soft limit on number of level-0 files.  We slow down writes at this point.
@@ -68,12 +69,16 @@ namespace leveldb {
     // can be packed together into 64-bits.
     static const SequenceNumber kMaxSequenceNumber = ((0x1ull << 56) - 1);
 
+    // 把internalKey内部的userKey sequence type全部提取了 internalKey只保存了原始的byte
     struct ParsedInternalKey {
         Slice userKey;
         SequenceNumber sequence;
         ValueType type;
 
-        ParsedInternalKey() {}  // Intentionally left uninitialized (for speed)
+        // Intentionally left uninitialized (for speed)
+        ParsedInternalKey() {
+
+        }
 
         ParsedInternalKey(const Slice &userKey,
                           const SequenceNumber &seq,
@@ -123,7 +128,9 @@ namespace leveldb {
 
         void FindShortSuccessor(std::string *key) const override;
 
-        const Comparator *user_comparator() const { return userComparator; }
+        const Comparator *user_comparator() const {
+            return userComparator;
+        }
 
         int Compare(const InternalKey &a, const InternalKey &b) const;
     };
@@ -143,17 +150,21 @@ namespace leveldb {
         bool KeyMayMatch(const Slice &key, const Slice &filter) const override;
     };
 
+    // 内部只保存了原始的byte,parsedInternalKey保存了对应的sequence等
+    //
     // Modules in this directory should keep internal keys wrapped inside
     // the following class instead of plain strings so that we do not
     // incorrectly use string comparisons instead of an InternalKeyComparator.
     class InternalKey {
     private:
         std::string rep_;
-
     public:
         InternalKey() = default;  // Leave rep_ as empty to indicate it is invalid
-        InternalKey(const Slice &userKey, SequenceNumber s, ValueType t) {
-            AppendInternalKey(&rep_, ParsedInternalKey(userKey, s, t));
+
+        InternalKey(const Slice &userKey,
+                    SequenceNumber sequenceNumber,
+                    ValueType valueType) {
+            AppendInternalKey(&rep_, ParsedInternalKey(userKey, sequenceNumber, valueType));
         }
 
         bool DecodeFrom(const Slice &s) {
@@ -166,7 +177,7 @@ namespace leveldb {
             return rep_;
         }
 
-        Slice user_key() const {
+        Slice userKey() const {
             return ExtractUserKey(rep_);
         }
 
@@ -186,8 +197,7 @@ namespace leveldb {
         return Compare(a.Encode(), b.Encode());
     }
 
-    inline bool ParseInternalKey(const Slice &internal_key,
-                                 ParsedInternalKey *result) {
+    inline bool ParseInternalKey(const Slice &internal_key, ParsedInternalKey *result) {
         const size_t n = internal_key.size();
         if (n < 8) return false;
         uint64_t num = DecodeFixed64(internal_key.data() + n - 8);
@@ -202,8 +212,8 @@ namespace leveldb {
     class LookupKey {
     public:
         // Initialize *this for looking up userKey at a snapshot with
-        // the specified sequence number.
-        LookupKey(const Slice &user_key, SequenceNumber sequence);
+        // the specified sequenceNumber number.
+        LookupKey(const Slice &userKey, SequenceNumber sequenceNumber);
 
         LookupKey(const LookupKey &) = delete;
 
@@ -211,17 +221,23 @@ namespace leveldb {
 
         ~LookupKey();
 
-        // Return a key suitable for lookup in a MemTable.
-        Slice memtable_key() const { return Slice(start_, end_ - start_); }
+        // return a key suitable for lookup in a MemTable.
+        Slice memtableKey() const {
+            return Slice(start_, end_ - start_);
+        }
 
-        // Return an internal key (suitable for passing to an internal iterator)
-        Slice internal_key() const { return Slice(kstart_, end_ - kstart_); }
+        // return an internal key (suitable for passing to an internal iterator)
+        Slice internal_key() const {
+            return Slice(kstart_, end_ - kstart_);
+        }
 
-        // Return the user key
-        Slice user_key() const { return Slice(kstart_, end_ - kstart_ - 8); }
+        // return the user key
+        Slice user_key() const {
+            return Slice(kstart_, end_ - kstart_ - 8);
+        }
 
     private:
-        // We construct a char array of the form:
+        // we construct a char array of the form:
         //    klength  varint32               <-- start_
         //    userkey  char[klength]          <-- kstart_
         //    tag      uint64

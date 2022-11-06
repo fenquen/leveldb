@@ -9,7 +9,8 @@
 
 namespace leveldb {
 
-    // Tag numbers for serialized VersionEdit.  These numbers are written to disk and should not be changed.
+    // versionEdit落地到manifest使用的
+    // These numbers are written to disk and should not be changed.
     enum Tag {
         kComparator = 1,
         kLogNumber = 2,
@@ -23,7 +24,7 @@ namespace leveldb {
     };
 
     void VersionEdit::Clear() {
-        comparator_.clear();
+        comparatorName_.clear();
         log_number_ = 0;
         prev_log_number_ = 0;
         last_sequence_ = 0;
@@ -40,7 +41,7 @@ namespace leveldb {
     void VersionEdit::EncodeTo(std::string *dst) const {
         if (has_comparator_) {
             PutVarint32(dst, kComparator);
-            PutLengthPrefixedSlice(dst, comparator_);
+            PutLengthPrefixedSlice(dst, comparatorName_);
         }
         if (has_log_number_) {
             PutVarint32(dst, kLogNumber);
@@ -117,7 +118,7 @@ namespace leveldb {
             switch (tag) {
                 case kComparator:
                     if (GetLengthPrefixedSlice(&input, &str)) {
-                        comparator_ = str.ToString();
+                        comparatorName_ = str.ToString();
                         has_comparator_ = true;
                     } else {
                         msg = "internalKeyComparator name";
@@ -160,7 +161,7 @@ namespace leveldb {
                     if (GetLevel(&input, &level) && GetInternalKey(&input, &key)) {
                         compact_pointers_.push_back(std::make_pair(level, key));
                     } else {
-                        msg = "compaction pointer";
+                        msg = "compaction_ pointer";
                     }
                     break;
 
@@ -205,7 +206,7 @@ namespace leveldb {
         r.append("VersionEdit {");
         if (has_comparator_) {
             r.append("\n  Comparator: ");
-            r.append(comparator_);
+            r.append(comparatorName_);
         }
         if (has_log_number_) {
             r.append("\n  LogNumber: ");

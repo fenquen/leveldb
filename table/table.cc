@@ -37,18 +37,18 @@ namespace leveldb {
 
     Status Table::Open(const Options &options,
                        RandomAccessFile *ldbFile,
-                       uint64_t size,
+                       uint64_t ldbFileSize,
                        Table **table) {
 
         *table = nullptr;
-        if (size < Footer::ENCODED_LEN) {
+        if (ldbFileSize < Footer::ENCODED_LEN) {
             return Status::Corruption("ldbFile is too short to be an sstable");
         }
 
         char footerSpace[Footer::ENCODED_LEN];
         Slice footerInput;
 
-        Status status = ldbFile->Read(size - Footer::ENCODED_LEN,
+        Status status = ldbFile->Read(ldbFileSize - Footer::ENCODED_LEN,
                                       Footer::ENCODED_LEN,
                                       &footerInput,
                                       footerSpace);
@@ -68,7 +68,7 @@ namespace leveldb {
         BlockContents indexBlockContents;
         ReadOptions readOptions;
         if (options.paranoid_checks) {
-            readOptions.verify_checksums = true;
+            readOptions.verifyChecksums_ = true;
         }
         status = ReadBlock(ldbFile,
                            readOptions,
@@ -102,7 +102,7 @@ namespace leveldb {
         // it is an empty block.
         ReadOptions opt;
         if (rep_->options.paranoid_checks) {
-            opt.verify_checksums = true;
+            opt.verifyChecksums_ = true;
         }
         BlockContents contents;
         if (!ReadBlock(rep_->file, opt, footer.metaindex_handle(), &contents).ok()) {
@@ -133,7 +133,7 @@ namespace leveldb {
         // requiring checksum verification in Table::Open.
         ReadOptions opt;
         if (rep_->options.paranoid_checks) {
-            opt.verify_checksums = true;
+            opt.verifyChecksums_ = true;
         }
         BlockContents block;
         if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
@@ -191,7 +191,7 @@ namespace leveldb {
                     s = ReadBlock(table->rep_->file, options, handle, &contents);
                     if (s.ok()) {
                         block = new Block(contents);
-                        if (contents.cachable && options.fill_cache) {
+                        if (contents.cachable && options.fillCache_) {
                             cache_handle = block_cache->Insert(key, block, block->size(),
                                                                &DeleteCachedBlock);
                         }

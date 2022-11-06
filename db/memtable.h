@@ -59,11 +59,11 @@ namespace leveldb {
                  const Slice &key,
                  const Slice &value);
 
-        // If memtable contains a value for key, store it in *value and return true.
-        // If memtable contains a deletion for key, store a NotFound() error
+        // If memtable contains a value for lookupKey, store it in *value and return true.
+        // If memtable contains a deletion for lookupKey, store a NotFound() error
         // in *status and return true.
         // Else, return false.
-        bool Get(const LookupKey &key, std::string *value, Status *s);
+        bool Get(const LookupKey &lookupKey, std::string *value, Status *status);
 
     private:
         friend class MemTableIterator;
@@ -78,14 +78,15 @@ namespace leveldb {
             int operator()(const char *a, const char *b) const;
         };
 
-        typedef SkipList<const char *, KeyComparator> Table;
 
         ~MemTable();  // private since only Unref() should be used to delete it
 
         KeyComparator keyComparator;
         int refs_;
         Arena arena;
-        Table table;
+
+        typedef SkipList<const char *, KeyComparator> Table;
+        Table table; // 跳表
     };
 
 }  // namespace leveldb

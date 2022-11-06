@@ -49,18 +49,18 @@ namespace leveldb {
 // Return the smallestInternalKey_ index i such that files[i]->largestInternalKey_ >= key.
 // Return files.size() if there is no such file.
 // REQUIRES: "files" contains a sorted list of non-overlapping files.
-    int FindFile(const InternalKeyComparator &icmp,
+    int FindFile(const InternalKeyComparator &internalKeyComparator,
                  const std::vector<FileMetaData *> &files, const Slice &key);
 
-// Returns true iff some file in "files" overlaps the user key range
+// Returns true iff some file in "fileMetaDataVec" overlaps the user key range
 // [*smallestInternalKey_,*largestInternalKey_].
 // smallestInternalKey_==nullptr represents a key smaller than all keys in the DB.
 // largestInternalKey_==nullptr represents a key largestInternalKey_ than all keys in the DB.
-// REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges
+// REQUIRES: If disjoint_sorted_files, fileMetaDataVec[] contains disjoint ranges
 //           in sorted order.
     bool SomeFileOverlapsRange(const InternalKeyComparator &icmp,
                                bool disjoint_sorted_files,
-                               const std::vector<FileMetaData *> &files,
+                               const std::vector<FileMetaData *> &fileMetaDataVec,
                                const Slice *smallest_user_key,
                                const Slice *largest_user_key);
 
@@ -79,16 +79,19 @@ namespace leveldb {
         // REQUIRES: This version has been saved (see VersionSet::SaveTo)
         void AddIterators(const ReadOptions &, std::vector<Iterator *> *iters);
 
-        Status Get(const ReadOptions &, const LookupKey &key, std::string *val, GetStats *stats);
+        Status Get(const ReadOptions &,
+                   const LookupKey &lookupKey,
+                   std::string *val,
+                   GetStats *stats);
 
         // Adds "stats" into the current state.  Returns true if a new
-        // compaction may need to be triggered, false otherwise.
+        // compaction_ may need to be triggered, false otherwise.
         // REQUIRES: lock is held
         bool UpdateStats(const GetStats &stats);
 
         // Record a sample of bytes read at the specified internal key.
         // Samples are taken approximately once every config::kReadBytesPeriod
-        // bytes.  Returns true if a new compaction may need to be triggered.
+        // bytes.  Returns true if a new compaction_ may need to be triggered.
         // REQUIRES: lock is held
         bool RecordReadSample(Slice key);
 
@@ -101,7 +104,7 @@ namespace leveldb {
         void GetOverlappingInputs(int level,
                                   const InternalKey *begin,  // nullptr means before all keys
                                   const InternalKey *end,    // nullptr means after all keys
-                                  std::vector<FileMetaData *> *inputs);
+                                  std::vector<FileMetaData *> *inputFileMetaDataVec);
 
         // Returns true iff some file in the specified level overlaps
         // some part of [*smallest_user_key,*largest_user_key].
@@ -111,7 +114,7 @@ namespace leveldb {
                             const Slice *smallest_user_key,
                             const Slice *largest_user_key);
 
-        // Return the level at which we should place a new memtable compaction
+        // Return the level at which we should place a new memtable compaction_
         // result that covers the range [smallest_user_key,largest_user_key].
         int PickLevelForMemTableOutput(const Slice &smallest_user_key,
                                        const Slice &largest_user_key);
@@ -135,9 +138,9 @@ namespace leveldb {
                                                    prev_(this),
                                                    refs_(0),
                                                    file_to_compact_(nullptr),
-                                                   file_to_compact_level_(-1),
-                                                   compaction_score_(-1),
-                                                   compaction_level_(-1) {}
+                                                   fileToCompactLevel_(-1),
+                                                   compactionScore_(-1),
+                                                   compactionLevel_(-1) {}
 
         Version(const Version &) = delete;
 
@@ -151,8 +154,8 @@ namespace leveldb {
         // order from newest to oldest.  If an invocation of func returns
         // false, makes no more calls.
         //
-        // REQUIRES: user portion of internal_key == userKey.
-        void ForEachOverlapping(Slice user_key, Slice internal_key, void *arg,
+        // REQUIRES: user portion of internalKey == userKey.
+        void ForEachOverlapping(Slice userKey, Slice internalKey, void *arg,
                                 bool (*func)(void *, int, FileMetaData *));
 
         VersionSet *belongingVersionSet;  // VersionSet to which this Version belongs
@@ -163,15 +166,14 @@ namespace leveldb {
         // list of files per level
         std::vector<FileMetaData *> fileMetaDataVecArr[config::kNumLevels];
 
-        // Next file to compact based on seek stats.
+        // next file to compact based on seek stats.
         FileMetaData *file_to_compact_;
-        int file_to_compact_level_;
+        int fileToCompactLevel_;
 
-        // Level that should be compacted next and its compaction score.
-        // Score < 1 means compaction is not strictly needed.  These fields
-        // are initialized by Finalize().
-        double compaction_score_;
-        int compaction_level_;
+        // Level that should be compacted next and its compaction_ score.
+        // Score < 1 means compaction_ is not strictly needed.  These fields are initialized by Finalize().
+        double compactionScore_;
+        int compactionLevel_;
     };
 
     class VersionSet {
@@ -187,19 +189,20 @@ namespace leveldb {
 
         ~VersionSet();
 
-        // Apply *edit to the current version to form a new descriptor that
+        // Apply *versionEdit to the current version to form a new descriptor that
         // is both saved to persistent state and installed as the new
-        // current version.  Will release *mu while actually writing to the file.
-        // REQUIRES: *mu is held on entry.
+        // current version.  Will release *mutex while actually writing to the file.
+        // REQUIRES: *mutex is held on entry.
         // REQUIRES: no other thread concurrently calls LogAndApply()
-        Status LogAndApply(VersionEdit *edit, port::Mutex *mu)
-        EXCLUSIVE_LOCKS_REQUIRED(mu);
+        Status LogAndApply(VersionEdit *versionEdit, port::Mutex *mutex) EXCLUSIVE_LOCKS_REQUIRED(mu);
 
         // Recover the last saved descriptor from persistent storage.
         Status Recover(bool *save_manifest);
 
         // Return the current version.
-        Version *current() const { return currentVersion_; }
+        Version *current() const {
+            return currentVersion_;
+        }
 
         // return the current manifest file number
         uint64_t ManifestFileNumber() const {
@@ -247,13 +250,13 @@ namespace leveldb {
         // being compacted, or zero if there is no such log file.
         uint64_t PrevLogNumber() const { return prev_log_number_; }
 
-        // Pick level and inputs for a new compaction.
-        // Returns nullptr if there is no compaction to be done.
+        // Pick level and inputs for a new compaction_.
+        // Returns nullptr if there is no compaction_ to be done.
         // Otherwise returns a pointer to a heap-allocated object that
-        // describes the compaction.  Caller should delete the result.
+        // describes the compaction_.  Caller should delete the result.
         Compaction *PickCompaction();
 
-        // Return a compaction object for compacting the range [begin,end] in
+        // Return a compaction_ object for compacting the range [begin,end] in
         // the specified level.  Returns nullptr if there is nothing in that
         // level that overlaps the specified range.  Caller should delete
         // the result.
@@ -264,14 +267,12 @@ namespace leveldb {
         // file at a level >= 1.
         int64_t MaxNextLevelOverlappingBytes();
 
-        // Create an iterator that reads over the compaction inputs for "*c".
-        // The caller should delete the iterator when no longer needed.
-        Iterator *MakeInputIterator(Compaction *c);
+        Iterator *MakeInputIterator(Compaction *compaction);
 
-        // Returns true iff some level needs a compaction.
+        // Returns true iff some level needs a compaction_.
         bool NeedsCompaction() const {
             Version *v = currentVersion_;
-            return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
+            return (v->compactionScore_ >= 1) || (v->file_to_compact_ != nullptr);
         }
 
         // Add all files listed in any live version to *live.
@@ -299,19 +300,20 @@ namespace leveldb {
 
         bool ReuseManifest(const std::string &dscname, const std::string &dscbase);
 
+        // 决定要compact哪个level上的ldb
         void Finalize(Version *version);
 
-        void GetRange(const std::vector<FileMetaData *> &inputs, InternalKey *smallest,
+        void GetRange(const std::vector<FileMetaData *> &inputFileMetaDataVec, InternalKey *smallest,
                       InternalKey *largest);
 
-        void GetRange2(const std::vector<FileMetaData *> &inputs1,
-                       const std::vector<FileMetaData *> &inputs2,
+        void GetRange2(const std::vector<FileMetaData *> &input1,
+                       const std::vector<FileMetaData *> &input2,
                        InternalKey *smallest, InternalKey *largest);
 
-        void SetupOtherInputs(Compaction *c);
+        void SetupOtherInputs(Compaction *compaction);
 
-        // Save current contents to *log
-        Status WriteSnapshot(log::Writer *log);
+        // save current contents to *writer
+        Status WriteSnapshot(log::Writer *writer);
 
         void AppendVersion(Version *version);
 
@@ -322,63 +324,72 @@ namespace leveldb {
         const InternalKeyComparator internalKeyComparator_;
 
         // 以下的5个是versionEdit的
-        uint64_t next_file_number_;
         uint64_t manifest_file_number_;
+        uint64_t next_file_number_; // manifest log ldb 文件公用的计数器
         uint64_t last_sequence_;
         uint64_t log_number_;
         uint64_t prev_log_number_;  // 0 or backing store for memtable being compacted
 
-        // Opened lazily
-        WritableFile *descriptor_file_;
-        log::Writer *descriptor_log_;
-        Version dummy_versions_;  // Head of circular doubly-linked list of versions.
-        Version *currentVersion_;        // == dummy_versions_.prev_
+        // 对应的是manifest
+        WritableFile *descriptorFile_;
+        // 对应的是manifest的writer
+        log::Writer *descriptorLog_;
 
-        // Per-level key at which the next compaction at that level should start.
+        Version dummy_versions_;  // Head of circular doubly-linked list of versions.
+        Version *currentVersion_; // == dummy_versions_.prev_
+
+        // per-level key at which the next compaction_ at the level should start.
         // Either an empty string, or a valid InternalKey.
-        std::string compact_pointer_[config::kNumLevels];
+        std::string compactPointer_[config::kNumLevels];
     };
 
-    // information about a compaction.
+    // information about a compaction_.
     class Compaction {
     public:
         ~Compaction();
 
         // Return the level that is being compacted.  Inputs from "level"
         // and "level+1" will be merged to produce a set of "level+1" files.
-        int level() const { return level_; }
+        int level() const {
+            return level_;
+        }
 
-        // Return the object that holds the edits to the descriptor done
-        // by this compaction.
-        VersionEdit *edit() { return &edit_; }
+        // Return the object that holds the edits to the descriptor done by this compaction_.
+        VersionEdit *edit() {
+            return &versionEdit_;
+        }
 
         // "which" must be either 0 or 1
-        int num_input_files(int which) const { return inputs_[which].size(); }
+        int num_input_files(int which) const {
+            return inputFileMetaDataVecArr_[which].size();
+        }
 
         // Return the ith input file at "level()+which" ("which" must be 0 or 1).
-        FileMetaData *input(int which, int i) const { return inputs_[which][i]; }
+        FileMetaData *input(int which, int i) const {
+            return inputFileMetaDataVecArr_[which][i];
+        }
 
-        // Maximum size of files to build during this compaction.
-        uint64_t MaxOutputFileSize() const { return max_output_file_size_; }
+        // Maximum size of files to build during this compaction_.
+        uint64_t MaxOutputFileSize() const {
+            return max_output_file_size_;
+        }
 
-        // Is this a trivial compaction that can be implemented by just
+        // Is this a trivial compaction_ that can be implemented by just
         // moving a single input file to the next level (no merging or splitting)
         bool IsTrivialMove() const;
 
-        // Add all inputs to this compaction as delete operations to *edit.
+        // Add all inputs to this compaction_ as delete operations to *edit.
         void AddInputDeletions(VersionEdit *edit);
 
-        // Returns true if the information we have available guarantees that
-        // the compaction is producing data in "level+1" for which no data exists
-        // in levels greater than "level+1".
-        bool IsBaseLevelForKey(const Slice &user_key);
+        // true if the information we have available guarantees that
+        // the compaction_ is producing data in "level+1" for which no data exists in levels greater than "level+1"
+        // a
+        // userKey不会落在level+2和以上的fileMeta
+        bool IsBaseLevelForKey(const Slice &userKey);
 
-        // Returns true iff we should stop building the current output
-        // before processing "internal_key".
-        bool ShouldStopBefore(const Slice &internal_key);
+        bool ShouldStopBefore(const Slice &internalKey);
 
-        // Release the input version for the compaction, once the compaction
-        // is successful.
+        // release the input version for the compaction_, once the compaction_ is successful.
         void ReleaseInputs();
 
     private:
@@ -390,24 +401,24 @@ namespace leveldb {
 
         int level_;
         uint64_t max_output_file_size_;
-        Version *input_version_;
-        VersionEdit edit_;
+        Version *inputVersion_;
+        VersionEdit versionEdit_;
 
-        // Each compaction reads inputs from "level_" and "level_+1"
-        std::vector<FileMetaData *> inputs_[2];  // The two sets of inputs
+        // each compaction_ reads inputs from "level_" and "level_+1" 两套的input
+        std::vector<FileMetaData *> inputFileMetaDataVecArr_[2];
 
         // State used to check for number of overlapping grandparent files
         // (parent == level_ + 1, grandparent == level_ + 2)
-        std::vector<FileMetaData *> grandparents_;
-        size_t grandparent_index_;  // Index in grandparent_starts_
-        bool seen_key_;             // Some output key has been seen
-        int64_t overlapped_bytes_;  // Bytes of overlap between current output and grandparent files
+        std::vector<FileMetaData *> grandparentFileMetaVac_;
+        size_t grandparentIndex_;  // Index in grandparent_starts_
+        bool seenKey_;             // Some output key has been seen
+        int64_t overlappedByteLen_;  // Bytes of overlap between current output and grandparent files
 
-        // State for implementing IsBaseLevelForKey
-        // level_ptrs_ holds indices into input_version_->levelStateArr: our state
+        // 用来 IsBaseLevelForKey()
+        // 记录了对应的version的fileMetaVecArr各个level上的vec的index
+        // level_ptrs_ holds indices into inputVersion_->levelStateArr: our state
         // is that we are positioned at one of the file ranges for each
-        // higher level than the ones involved in this compaction (i.e. for
-        // all L >= level_ + 2).
+        // higher level than the ones involved in this compaction_ (i.e. for all L >= level_ + 2).
         size_t level_ptrs_[config::kNumLevels];
     };
 

@@ -499,11 +499,11 @@ void leveldb_readoptions_destroy(leveldb_readoptions_t* opt) { delete opt; }
 
 void leveldb_readoptions_set_verify_checksums(leveldb_readoptions_t* opt,
                                               uint8_t v) {
-  opt->rep.verify_checksums = v;
+  opt->rep.verifyChecksums_ = v;
 }
 
 void leveldb_readoptions_set_fill_cache(leveldb_readoptions_t* opt, uint8_t v) {
-  opt->rep.fill_cache = v;
+  opt->rep.fillCache_ = v;
 }
 
 void leveldb_readoptions_set_snapshot(leveldb_readoptions_t* opt,

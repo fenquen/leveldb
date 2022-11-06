@@ -122,23 +122,33 @@ namespace leveldb {
         return user_policy_->KeyMayMatch(ExtractUserKey(key), f);
     }
 
-    LookupKey::LookupKey(const Slice &user_key, SequenceNumber s) {
-        size_t usize = user_key.size();
-        size_t needed = usize + 13;  // A conservative estimate
-        char *dst;
+    LookupKey::LookupKey(const Slice &userKey, SequenceNumber sequenceNumber) {
+        size_t userKeySize = userKey.size();
+        size_t needed = userKeySize + 17;  // A conservative estimate
+
+        char *dest;
         if (needed <= sizeof(space_)) {
-            dst = space_;
+            dest = space_;
         } else {
-            dst = new char[needed];
+            dest = new char[needed];
         }
-        start_ = dst;
-        dst = EncodeVarint32(dst, usize + 8);
-        kstart_ = dst;
-        std::memcpy(dst, user_key.data(), usize);
-        dst += usize;
-        EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
-        dst += 8;
-        end_ = dst;
+
+        start_ = dest;
+
+        // internalKey本身的长度
+        dest = EncodeVarint32(dest, userKeySize + 8);
+
+        kstart_ = dest;
+
+        // userKey
+        std::memcpy(dest, userKey.data(), userKeySize);
+        dest += userKeySize; // 前进
+
+        // sequence
+        EncodeFixed64(dest, PackSequenceAndType(sequenceNumber, kValueTypeForSeek));
+        dest += 8; // 前进
+
+        end_ = dest;
     }
 
 }  // namespace leveldb

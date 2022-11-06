@@ -98,9 +98,9 @@ namespace leveldb {
                        const Slice &value) {
         // Format of an entry is concatenation of:
         //  keySize     : varint32 of internal_key.size()
-        //  key bytes    : char[internal_key.size()]
+        //  key byte    : char[internal_key.size()]
         //  value_size   : varint32 of value.size()
-        //  value bytes  : char[value.size()]
+        //  value byte  : char[value.size()]
         size_t keySize = key.size();
         size_t internalKeySize = keySize + 8;
 
@@ -134,39 +134,44 @@ namespace leveldb {
         table.Insert(allocated);
     }
 
-    bool MemTable::Get(const LookupKey &key, std::string *value, Status *s) {
-        Slice memkey = key.memtable_key();
-        Table::Iterator iter(&table);
-        iter.Seek(memkey.data());
-        if (iter.Valid()) {
+    bool MemTable::Get(const LookupKey &lookupKey,
+                       std::string *value,
+                       Status *status) {
+
+        Slice memtableKey = lookupKey.memtableKey();
+        Table::Iterator iterator(&table);
+
+        iterator.Seek(memtableKey.data());
+
+        if (iterator.Valid()) {
             // entry format is:
-            //    klength  varint32
-            //    userkey  char[klength]
-            //    tag      uint64
+            //    internalKeyLen  varint32
+            //    userkey      char[internalKeyLen-8]
+            //    valueType      uint64
             //    vlength  varint32
             //    value    char[vlength]
-            // Check that it belongs to same user key.  We do not check the
+            // Check that it belongs to same user lookupKey.  We do not check the
             // sequence number since the Seek() call above should have skipped
-            // all entries with overly large sequence numbers.
-            const char *entry = iter.key();
-            uint32_t key_length;
-            const char *key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
-            if (keyComparator.internalKeyComparator.user_comparator()->Compare(
-                    Slice(key_ptr, key_length - 8), key.user_key()) == 0) {
-                // Correct user key
-                const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
-                switch (static_cast<ValueType>(tag & 0xff)) {
+            // all entries with overly large sequence numbers
+            const char *entry = iterator.key();
+            uint32_t internalKeyLen;
+            const char *internalKeyPos = GetVarint32Ptr(entry, entry + 5, &internalKeyLen);
+            if (keyComparator.internalKeyComparator.user_comparator()->Compare(Slice(internalKeyPos, internalKeyLen - 8), lookupKey.user_key()) == 0) {
+                // 更正 user lookupKey
+                const uint64_t valueType = DecodeFixed64(internalKeyPos + internalKeyLen - 8);
+                switch (static_cast<ValueType>(valueType & 0xff)) {
                     case kTypeValue: {
-                        Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
+                        Slice v = GetLengthPrefixedSlice(internalKeyPos + internalKeyLen);
                         value->assign(v.data(), v.size());
                         return true;
                     }
                     case kTypeDeletion:
-                        *s = Status::NotFound(Slice());
+                        *status = Status::NotFound(Slice());
                         return true;
                 }
             }
         }
+
         return false;
     }
 

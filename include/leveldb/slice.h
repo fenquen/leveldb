@@ -46,7 +46,9 @@ namespace leveldb {
         Slice &operator=(const Slice &) = default;
 
         // Return a pointer to the beginning of the referenced data
-        const char *data() const { return data_; }
+        const char *data() const {
+            return data_;
+        }
 
         // Return the length (in bytes) of the referenced data
         size_t size() const { return size_; }

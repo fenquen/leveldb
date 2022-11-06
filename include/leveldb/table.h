@@ -44,7 +44,7 @@ namespace leveldb {
         // *ldbFile must remain live while this Table is in use.
         static Status Open(const Options &options,
                            RandomAccessFile *ldbFile,
-                           uint64_t file_size,
+                           uint64_t ldbFileSize,
                            Table **table);
 
         Table(const Table &) = delete;

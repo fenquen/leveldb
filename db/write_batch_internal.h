@@ -20,7 +20,7 @@ namespace leveldb {
         static int Count(const WriteBatch *writeBatch);
 
         // Set the count for the number of entries in the writeBatch_.
-        static void SetCount(WriteBatch *batch, int n);
+        static void SetCount(WriteBatch *writeBatch, int n);
 
         // Return the sequence number for the start of this writeBatch.
         static SequenceNumber Sequence(const WriteBatch *writeBatch);
@@ -29,7 +29,9 @@ namespace leveldb {
         // this writeBatch_.
         static void SetSequence(WriteBatch *batch, SequenceNumber seq);
 
-        static Slice Contents(const WriteBatch *batch) { return Slice(batch->rep_); }
+        static Slice Contents(const WriteBatch *batch) {
+            return Slice(batch->rep_);
+        }
 
         static size_t ByteSize(const WriteBatch *batch) { return batch->rep_.size(); }
 
