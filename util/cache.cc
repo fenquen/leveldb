@@ -295,12 +295,14 @@ namespace leveldb {
             Unref(reinterpret_cast<LRUHandle *>(handle));
         }
 
-        Cache::Handle *LRUCache::Insert(const Slice &key, uint32_t hash, void *value,
+        Cache::Handle *LRUCache::Insert(const Slice &key,
+                                        uint32_t hash,
+                                        void *value,
                                         size_t charge,
                                         void (*deleter)(const Slice &key, void *value)) {
             MutexLock l(&mutex_);
 
-            LRUHandle *lruHandle = reinterpret_cast<LRUHandle *>(malloc(sizeof(LRUHandle) + key.size() - 1));
+            auto *lruHandle = reinterpret_cast<LRUHandle *>(malloc(sizeof(LRUHandle) + key.size() - 1));
             lruHandle->value = value;
             lruHandle->deleter = deleter;
             lruHandle->charge = charge;
@@ -317,7 +319,7 @@ namespace leveldb {
                 LRU_Append(&in_use_, lruHandle);
                 usage_ += charge;
                 FinishErase(handleTable_.Insert(lruHandle));
-            } else {  // don't cache. (capacity_==0 is supported 意思是 turn off caching.)
+            } else {  // don't cache. (capacity_==0 is supported 意思是指 turn off caching.)
                 // next is read by key() in an assert, so it must be initialized
                 lruHandle->next = nullptr;
             }

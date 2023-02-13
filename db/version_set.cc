@@ -270,15 +270,15 @@ namespace leveldb {
     }  // namespace
 
     static void SaveValue(void *arg, const Slice &internalKey, const Slice &value) {
-        auto *s = reinterpret_cast<Saver *>(arg);
+        auto *saver = reinterpret_cast<Saver *>(arg);
         ParsedInternalKey parsed_key;
         if (!ParseInternalKey(internalKey, &parsed_key)) {
-            s->state = kCorrupt;
+            saver->state = kCorrupt;
         } else {
-            if (s->ucmp->Compare(parsed_key.userKey, s->user_key) == 0) {
-                s->state = (parsed_key.type == kTypeValue) ? kFound : kDeleted;
-                if (s->state == kFound) {
-                    s->value->assign(value.data(), value.size());
+            if (saver->ucmp->Compare(parsed_key.userKey, saver->user_key) == 0) {
+                saver->state = (parsed_key.type == kTypeValue) ? kFound : kDeleted;
+                if (saver->state == kFound) {
+                    saver->value->assign(value.data(), value.size());
                 }
             }
         }
@@ -299,6 +299,7 @@ namespace leveldb {
         std::vector<FileMetaData *> tmp;
         tmp.reserve(fileMetaDataVecArr[0].size());
 
+        // level0
         for (auto fileMeta : fileMetaDataVecArr[0]) {
             if (userComparator->Compare(userKey, fileMeta->smallestInternalKey_.userKey()) >= 0 &&
                 userComparator->Compare(userKey, fileMeta->largestInternalKey_.userKey()) <= 0) {

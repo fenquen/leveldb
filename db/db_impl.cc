@@ -538,7 +538,7 @@ namespace leveldb {
 
         delete logFileSequential;
 
-        // 这边的逻辑会决定要必要把函数新生成的memTable注入到dbImple
+        // 这边的逻辑会决定要必要把函数新生成的memTable注入到dbImpl
         // See if we should keep reusing the last log logFileSequential
         if (status.ok() && options_.reuseLogs && lastLog && compactionRound == 0) {
             assert(logFileWritable_ == nullptr);

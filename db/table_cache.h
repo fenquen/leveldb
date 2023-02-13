@@ -19,6 +19,7 @@ namespace leveldb {
 
     class Env;
 
+    // 内部有包含 cache
     class TableCache {
     public:
         TableCache(const std::string &dbname,
@@ -46,7 +47,8 @@ namespace leveldb {
         Status Get(const ReadOptions &readOptions,
                    uint64_t fileNumber,
                    uint64_t fileSize,
-                   const Slice &internalKey, void *arg,
+                   const Slice &internalKey,
+                   void *arg,
                    void (*resultHandler)(void *, const Slice &, const Slice &));
 
         // Evict any entry for the specified file number

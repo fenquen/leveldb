@@ -23,7 +23,7 @@ namespace leveldb {
     // 用来记录index block 和 meta index block 要用到的offset和size
     class BlockHandle {
     public:
-        // Maximum encoding length of a BlockHandle
+        // maximum encoding length of a BlockHandle
         enum {
             kMaxEncodedLength = 10 + 10
         };
