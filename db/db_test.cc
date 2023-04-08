@@ -601,7 +601,7 @@ TEST_F(DBTest, GetFromImmutableLayer) {
     // Block sync calls.
     env_->delay_data_sync_.store(true, std::memory_order_release);
     Put("k1", std::string(100000, 'x'));  // Fill memtable.
-    Put("k2", std::string(100000, 'y'));  // Trigger compaction.
+    Put("k2", std::string(100000, 'y'));  // Trigger compaction_.
     ASSERT_EQ("v1", Get("foo"));
     // Release sync calls.
     env_->delay_data_sync_.store(false, std::memory_order_release);
@@ -742,8 +742,8 @@ TEST_F(DBTest, GetEncountersEmptyLevel) {
     //   * sstable A in level 0
     //   * nothing in level 1
     //   * sstable B in level 2
-    // Then do enough Get() calls to arrange for an automatic compaction
-    // of sstable A.  A bug would cause the compaction to be marked as
+    // Then do enough Get() calls to arrange for an automatic compaction_
+    // of sstable A.  A bug would cause the compaction_ to be marked as
     // occurring at level 1 (instead of the correct level 0).
 
     // Step 1: First place sstables in levels 0 and 2
@@ -767,7 +767,7 @@ TEST_F(DBTest, GetEncountersEmptyLevel) {
       ASSERT_EQ("NOT_FOUND", Get("missing"));
     }
 
-    // Step 4: Wait for compaction to finish
+    // Step 4: Wait for compaction_ to finish
     DelayMilliseconds(1000);
 
     ASSERT_EQ(NumTableFilesAtLevel(0), 0);
@@ -1019,8 +1019,8 @@ TEST_F(DBTest, RecoveryWithEmptyLog) {
   } while (ChangeOptions());
 }
 
-// Check that writes done during a memtable compaction are recovered
-// if the database is shutdown during the memtable compaction.
+// Check that writes done during a memtable compaction_ are recovered
+// if the database is shutdown during the memtable compaction_.
 TEST_F(DBTest, RecoverDuringMemtableCompaction) {
   do {
     Options options = CurrentOptions();
@@ -1028,12 +1028,12 @@ TEST_F(DBTest, RecoverDuringMemtableCompaction) {
     options.writeBufferSize = 1000000;
     Reopen(&options);
 
-    // Trigger a long memtable compaction and reopen the database during it
+    // Trigger a long memtable compaction_ and reopen the database during it
     ASSERT_LEVELDB_OK(Put("foo", "v1"));  // Goes to 1st log file
     ASSERT_LEVELDB_OK(
         Put("big1", std::string(10000000, 'x')));  // Fills memtable
     ASSERT_LEVELDB_OK(
-        Put("big2", std::string(1000, 'y')));  // Triggers compaction
+        Put("big2", std::string(1000, 'y')));  // Triggers compaction_
     ASSERT_LEVELDB_OK(Put("bar", "v2"));       // Goes to new log file
 
     Reopen(&options);
@@ -1156,7 +1156,7 @@ TEST_F(DBTest, SparseMerge) {
   //    large amount of data with prefix B
   //    small amount of data with prefix C
   // and that recent updates have made small changes to all three prefixes.
-  // Check that we do not do a compaction that merges all of B in one shot.
+  // Check that we do not do a compaction_ that merges all of B in one shot.
   const std::string value(1000, 'x');
   Put("A", "va");
   // Write approximately 100MB of "B" values
@@ -1271,7 +1271,7 @@ TEST_F(DBTest, ApproximateSizes_MixOfSmallAndLarge) {
     ASSERT_LEVELDB_OK(Put(Key(7), RandomString(&rnd, 10000)));
 
     if (options.reuseLogs) {
-      // Need to force a memtable compaction since recovery does not do so.
+      // Need to force a memtable compaction_ since recovery does not do so.
       ASSERT_LEVELDB_OK(dbfull()->TEST_CompactMemTable());
     }
 
@@ -1466,7 +1466,7 @@ TEST_F(DBTest, OverlapInLevel0) {
     dbfull()->TEST_CompactRange(2, nullptr, nullptr);
     ASSERT_EQ("2", FilesPerLevel());
 
-    // Do a memtable compaction.  Before bug-fix, the compaction would
+    // Do a memtable compaction_.  Before bug-fix, the compaction_ would
     // not detect the overlap with level-0 files and would incorrectly place
     // the deletion in a deeper level.
     ASSERT_LEVELDB_OK(Delete("600"));
@@ -1489,7 +1489,7 @@ TEST_F(DBTest, L0_CompactionBug_Issue44_a) {
   Reopen();
   Reopen();
   ASSERT_EQ("(a->v)", Contents());
-  DelayMilliseconds(1000);  // Wait for compaction to finish
+  DelayMilliseconds(1000);  // Wait for compaction_ to finish
   ASSERT_EQ("(a->v)", Contents());
 }
 
@@ -1505,7 +1505,7 @@ TEST_F(DBTest, L0_CompactionBug_Issue44_b) {
   Put("", "");
   Reopen();
   Put("", "");
-  DelayMilliseconds(1000);  // Wait for compaction to finish
+  DelayMilliseconds(1000);  // Wait for compaction_ to finish
   Reopen();
   Put("d", "dv");
   Reopen();
@@ -1515,7 +1515,7 @@ TEST_F(DBTest, L0_CompactionBug_Issue44_b) {
   Delete("b");
   Reopen();
   ASSERT_EQ("(->)(c->condVar)", Contents());
-  DelayMilliseconds(1000);  // Wait for compaction to finish
+  DelayMilliseconds(1000);  // Wait for compaction_ to finish
   ASSERT_EQ("(->)(c->condVar)", Contents());
 }
 
@@ -1833,13 +1833,13 @@ TEST_F(DBTest, ManifestWriteError) {
     ASSERT_LEVELDB_OK(Put("foo", "bar"));
     ASSERT_EQ("bar", Get("foo"));
 
-    // Memtable compaction (will succeed)
+    // Memtable compaction_ (will succeed)
     dbfull()->TEST_CompactMemTable();
     ASSERT_EQ("bar", Get("foo"));
     const int last = config::kMaxMemCompactLevel;
     ASSERT_EQ(NumTableFilesAtLevel(last), 1);  // foo=>bar is now in last level
 
-    // Merging compaction (will fail)
+    // Merging compaction_ (will fail)
     error_type->store(true, std::memory_order_release);
     dbfull()->TEST_CompactRange(last, nullptr, nullptr);  // Should fail
     ASSERT_EQ("bar", Get("foo"));

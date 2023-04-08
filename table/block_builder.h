@@ -31,7 +31,7 @@ namespace leveldb {
 
         // Finish building the block and return a slice that refers to the
         // block contents.  The returned slice will remain valid for the
-        // lifetime of this builder or until Reset() is called.
+        // lifetime of this tableBuilder_ or until Reset() is called.
         Slice Finish();
 
         // Returns an estimate of the current (uncompressed) size of the block being building.

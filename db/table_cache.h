@@ -19,6 +19,7 @@ namespace leveldb {
 
     class Env;
 
+    // 内部有包含 cache
     class TableCache {
     public:
         TableCache(const std::string &dbname,
@@ -27,6 +28,8 @@ namespace leveldb {
 
         ~TableCache();
 
+        // 返回的是 table对象上的iterator
+        //
         // Return an iterator for the specified file number (the corresponding
         // file length must be exactly "fileSize_" bytes).  If "tableptr" is
         // non-null, also sets "*tableptr" to point to the Table object
@@ -39,13 +42,14 @@ namespace leveldb {
                               uint64_t fileSize,
                               Table **tableptr = nullptr);
 
-        // If a seek to internal key "k" in specified file finds an entry,
-        // call (*handle_result)(arg, found_key, found_value).
-        Status Get(const ReadOptions &options,
-                   uint64_t file_number,
-                   uint64_t file_size,
-                   const Slice &k, void *arg,
-                   void (*handle_result)(void *, const Slice &, const Slice &));
+        // If a seek to internal key "internalKey" in specified file finds an entry,
+        // call (*resultHandler)(arg, found_key, found_value).
+        Status Get(const ReadOptions &readOptions,
+                   uint64_t fileNumber,
+                   uint64_t fileSize,
+                   const Slice &internalKey,
+                   void *arg,
+                   void (*resultHandler)(void *, const Slice &, const Slice &));
 
         // Evict any entry for the specified file number
         void Evict(uint64_t file_number);
@@ -58,6 +62,7 @@ namespace leveldb {
         Env *const env_;
         const std::string dbname_;
         const Options &options_;
+        // key是fileNumber value是TableAndFile
         Cache *cache_;
     };
 

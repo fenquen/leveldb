@@ -28,8 +28,7 @@ namespace leveldb {
                   indexBlockBuilder_(&indexBlockOptions),
                   entryCount(0),
                   closed(false),
-                  filterBlockBuilder(
-                          options.filterPolicy == nullptr ? nullptr : new FilterBlockBuilder(options.filterPolicy)),
+                  filterBlockBuilder(options.filterPolicy == nullptr ? nullptr : new FilterBlockBuilder(options.filterPolicy)),
                   pendingIndexBlockEntry_(false) {
             indexBlockOptions.blockRestartInterval = 1;
         }

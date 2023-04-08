@@ -27,9 +27,10 @@ namespace leveldb {
 
     class WritableFile;
 
+    // 确切的说是ldb文件的builder
     class LEVELDB_EXPORT TableBuilder {
     public:
-        // Create a builder that will store the contents of the table it is
+        // Create a tableBuilder_ that will store the contents of the table it is
         // building in *writableFile.  Does not close the writableFile.  It is up to the
         // caller to close the writableFile after calling Finish().
         TableBuilder(const Options &options, WritableFile *writableFile);
@@ -41,7 +42,7 @@ namespace leveldb {
         // REQUIRES: Either Finish() or Abandon() has been called.
         ~TableBuilder();
 
-        // Change the options used by this builder.  Note: only some of the
+        // Change the options used by this tableBuilder_.  Note: only some of the
         // option fields can be changed after construction.  If a field is
         // not allowed to change dynamically and its value in the structure
         // passed to the constructor is different from its value in the
@@ -70,10 +71,10 @@ namespace leveldb {
         // REQUIRES: Finish(), Abandon() have not been called
         Status Finish();
 
-        // Indicate that the contents of this builder should be abandoned.  Stops
+        // Indicate that the contents of this tableBuilder_ should be abandoned.  Stops
         // using the file passed to the constructor after this function returns.
         // If the caller is not going to call Finish(), it must call Abandon()
-        // before destroying this builder.
+        // before destroying this tableBuilder_.
         // REQUIRES: Finish(), Abandon() have not been called
         void Abandon();
 

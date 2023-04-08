@@ -167,7 +167,7 @@ namespace leveldb {
             }
 
             ReadOptions ro;
-            ro.fill_cache = false;
+            ro.fillCache_ = false;
             Iterator *iter = table->NewIterator(ro);
             std::string r;
             for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {

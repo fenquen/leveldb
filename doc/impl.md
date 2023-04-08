@@ -77,27 +77,27 @@ In the background:
 ## Compactions
 
 When the size of level L exceeds its limit, we compact it in a background
-thread. The compaction picks a file from level L and all overlapping files from
+thread. The compaction_ picks a file from level L and all overlapping files from
 the next level L+1. Note that if a level-L file overlaps only part of a
 level-(L+1) file, the entire file at level-(L+1) is used as an input to the
-compaction and will be discarded after the compaction.  Aside: because level-0
+compaction_ and will be discarded after the compaction_.  Aside: because level-0
 is special (files in it may overlap each other), we treat compactions from
-level-0 to level-1 specially: a level-0 compaction may pick more than one
+level-0 to level-1 specially: a level-0 compaction_ may pick more than one
 level-0 file in case some of these files overlap each other.
 
-A compaction merges the contents of the picked files to produce a sequence of
+A compaction_ merges the contents of the picked files to produce a sequence of
 level-(L+1) files. We switch to producing a new level-(L+1) file after the
 current output file has reached the target file size (2MB). We also switch to a
 new output file when the key range of the current output file has grown enough
 to overlap more than ten level-(L+2) files.  This last rule ensures that a later
-compaction of a level-(L+1) file will not pick up too much data from
+compaction_ of a level-(L+1) file will not pick up too much data from
 level-(L+2).
 
 The old files are discarded and the new files are added to the serving state.
 
 Compactions for a particular level rotate through the key space. In more detail,
-for each level L, we remember the ending key of the last compaction at level L.
-The next compaction for level L will pick the first file that starts after this
+for each level L, we remember the ending key of the last compaction_ at level L.
+The next compaction_ for level L will pick the first file that starts after this
 key (wrapping around to the beginning of the key space if there is no such
 file).
 
@@ -114,12 +114,12 @@ Other than the special level-0 compactions, we will pick one 2MB file from level
 L. In the worst case, this will overlap ~ 12 files from level L+1 (10 because
 level-(L+1) is ten times the size of level-L, and another two at the boundaries
 since the file ranges at level-L will usually not be aligned with the file
-ranges at level-L+1). The compaction will therefore read 26MB and write 26MB.
+ranges at level-L+1). The compaction_ will therefore read 26MB and write 26MB.
 Assuming a disk IO rate of 100MB/s (ballpark range for modern drives), the worst
-compaction cost will be approximately 0.5 second.
+compaction_ cost will be approximately 0.5 second.
 
 If we throttle the background writing to something small, say 10% of the full
-100MB/s speed, a compaction may take up to 5 seconds. If the user is writing at
+100MB/s speed, a compaction_ may take up to 5 seconds. If the user is writing at
 10MB/s, we might build up lots of level-0 files (~50 to hold the 5*10MB). This
 may significantly increase the cost of reads due to the overhead of merging more
 files together on every read.
@@ -166,7 +166,7 @@ So maybe even the sharding is not necessary on modern filesystems?
 
 ## Garbage collection of files
 
-`RemoveObsoleteFiles()` is called at the end of every compaction and at the end
+`RemoveObsoleteFiles()` is called at the end of every compaction_ and at the end
 of recovery. It finds the names of all files in the database. It deletes all log
 files that are not the current log file. It deletes all table files that are not
-referenced from some level and are not the output of an active compaction.
+referenced from some level and are not the output of an active compaction_.

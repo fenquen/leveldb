@@ -22,7 +22,9 @@ namespace leveldb {
         public:
             BytewiseComparatorImpl() = default;
 
-            const char *Name() const override { return "leveldb.BytewiseComparator"; }
+            const char *Name() const override {
+                return "leveldb.BytewiseComparator";
+            }
 
             int Compare(const Slice &a, const Slice &b) const override {
                 return a.compare(b);

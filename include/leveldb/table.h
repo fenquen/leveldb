@@ -44,7 +44,7 @@ namespace leveldb {
         // *ldbFile must remain live while this Table is in use.
         static Status Open(const Options &options,
                            RandomAccessFile *ldbFile,
-                           uint64_t file_size,
+                           uint64_t ldbFileSize,
                            Table **table);
 
         Table(const Table &) = delete;
@@ -76,10 +76,10 @@ namespace leveldb {
         explicit Table(Rep *rep) : rep_(rep) {}
 
         // Calls (*handler)(arg, ...) with the entry found after a call
-        // to Seek(key).  May not make such a call if filter policy says
-        // that key is not present.
+        // to Seek(internalKey).  May not make such a call if filter policy says
+        // that internalKey is not present.
         Status InternalGet(const ReadOptions & readOptions,
-                           const Slice &key, void *arg,
+                           const Slice &internalKey, void *arg,
                            void (*handler)(void *arg, const Slice &key, const Slice &value));
 
         void ReadMeta(const Footer &footer);

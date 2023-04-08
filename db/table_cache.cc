@@ -11,6 +11,7 @@
 
 namespace leveldb {
 
+    // table对象和对应的ldb
     struct TableAndFile {
         RandomAccessFile *file;
         Table *table;
@@ -43,6 +44,7 @@ namespace leveldb {
     }
 
     // 得到table都要过cache
+    // 本质是得到table and file
     Status TableCache::FindTable(uint64_t fileNumber, uint64_t fileSize, Cache::Handle **handle) {
         Status status;
 
@@ -50,36 +52,37 @@ namespace leveldb {
         EncodeFixed64(buf, fileNumber);
         Slice key(buf, sizeof(buf));
 
+        // lruHandle
         *handle = cache_->Lookup(key);
         if (*handle == nullptr) {
-            std::string tableFilePath = TableFileName(dbname_, fileNumber);
-
-            RandomAccessFile *randomAccessFile = nullptr;
-            Table *table = nullptr;
-
-            // 得到对应的lbd文件
-            status = env_->NewRandomAccessFile(tableFilePath, &randomAccessFile);
+            // 得到对应的ldb文件,也便是table对应的文件
+            std::string ldbFilePath = TableFileName(dbname_, fileNumber);
+            RandomAccessFile *ldbFile = nullptr;
+            status = env_->NewRandomAccessFile(ldbFilePath, &ldbFile);
             if (!status.ok()) {
                 // 老版本中后缀不是ldb而是那个广为流传的sst
                 std::string tableFilePathSST = SSTTableFileName(dbname_, fileNumber);
-                if (env_->NewRandomAccessFile(tableFilePathSST, &randomAccessFile).ok()) {
+                if (env_->NewRandomAccessFile(tableFilePathSST, &ldbFile).ok()) {
                     status = Status::OK();
                 }
             }
 
+            // 得到table对象
+            Table *table = nullptr;
             if (status.ok()) {
-                status = Table::Open(options_, randomAccessFile, fileSize, &table);
+                status = Table::Open(options_, ldbFile, fileSize, &table);
             }
 
             if (!status.ok()) {
                 assert(table == nullptr);
-                delete randomAccessFile;
+                delete ldbFile;
                 // We do not cache error results so that if the error is transient,
-                // or somebody repairs the randomAccessFile, we recover automatically.
+                // or somebody repairs the ldbFile, we recover automatically.
             } else {
                 auto *tableAndFile = new TableAndFile();
-                tableAndFile->file = randomAccessFile;
+                tableAndFile->file = ldbFile;
                 tableAndFile->table = table;
+                // 读取到的tableAndFile添加到cache的
                 *handle = cache_->Insert(key, tableAndFile, 1, &DeleteEntry);
             }
         }
@@ -113,18 +116,20 @@ namespace leveldb {
         return iterator;
     }
 
-    Status TableCache::Get(const ReadOptions &options, uint64_t file_number,
-                           uint64_t file_size, const Slice &k, void *arg,
-                           void (*handle_result)(void *, const Slice &,
-                                                 const Slice &)) {
+    Status TableCache::Get(const ReadOptions &readOptions,
+                           uint64_t fileNumber,
+                           uint64_t fileSize,
+                           const Slice &internalKey,
+                           void *arg,  // saver
+                           void (*resultHandler)(void *, const Slice &internalKey, const Slice &value)) {
         Cache::Handle *handle = nullptr;
-        Status s = FindTable(file_number, file_size, &handle);
-        if (s.ok()) {
-            Table *t = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
-            s = t->InternalGet(options, k, arg, handle_result);
+        Status status = this->FindTable(fileNumber, fileSize, &handle);
+        if (status.ok()) {
+            Table *table = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
+            status = table->InternalGet(readOptions, internalKey, arg, resultHandler);
             cache_->Release(handle);
         }
-        return s;
+        return status;
     }
 
     void TableCache::Evict(uint64_t file_number) {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-// Test for issue 178: a manual compaction causes deleted data to reappear.
+// Test for issue 178: a manual compaction_ causes deleted data to reappear.
 #include <cstdlib>
 #include <iostream>
 #include <sstream>

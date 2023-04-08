@@ -876,8 +876,7 @@ namespace leveldb {
                 env_initialized_.store(true, std::memory_order::memory_order_relaxed);
 #endif
                 static_assert(sizeof(env_storage_) >= sizeof(EnvType), "env_storage_ will not fit the Env");
-                static_assert(alignof(decltype(env_storage_)) >= alignof(EnvType),
-                              "env_storage_ does not meet the Env's alignment needs");
+                static_assert(alignof(decltype(env_storage_)) >= alignof(EnvType), "env_storage_ does not meet the Env's alignment needs");
 
                 new(&env_storage_) EnvType();
             }

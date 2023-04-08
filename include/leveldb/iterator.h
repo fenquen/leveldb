@@ -87,7 +87,9 @@ namespace leveldb {
         // The list's head node is inlined in the iterator.
         struct CleanupNode {
             // True if the node is not used. Only head nodes might be unused.
-            bool IsEmpty() const { return function == nullptr; }
+            bool IsEmpty() const {
+                return function == nullptr;
+            }
 
             // Invokes the cleanup function.
             void Run() {

@@ -208,7 +208,7 @@ TEST_F(CorruptionTest, RecoverWriteError) {
 }
 
 TEST_F(CorruptionTest, NewFileErrorDuringWrite) {
-  // Do enough writing to force minor compaction
+  // Do enough writing to force minor compaction_
   env_.writable_file_error_ = true;
   const int num = 3 + (Options().writeBufferSize / kValueSize);
   std::string value_storage;

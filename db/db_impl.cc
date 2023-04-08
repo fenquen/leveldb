@@ -54,37 +54,41 @@ namespace leveldb {
     };
 
     struct DBImpl::CompactionState {
-        // Files produced by compaction
+        // Files produced by compaction_
         struct Output {
             uint64_t number;
-            uint64_t file_size;
-            InternalKey smallest, largest;
+            uint64_t fileSize;
+            InternalKey smallest;
+            InternalKey largest;
         };
 
-        Output *current_output() { return &outputs[outputs.size() - 1]; }
+        Output *current_output() {
+            return &outPutVec_[outPutVec_.size() - 1];
+        }
 
-        explicit CompactionState(Compaction *c)
-                : compaction(c),
-                  smallest_snapshot(0),
-                  outfile(nullptr),
-                  builder(nullptr),
-                  total_bytes(0) {}
+        explicit CompactionState(Compaction *compaction) : compaction_(compaction),
+                                                           smallestSnapshot_(0),
+                                                           writableFile_(nullptr),
+                                                           tableBuilder_(nullptr),
+                                                           totalByteLen_(0) {
 
-        Compaction *const compaction;
+        }
 
-        // Sequence numbers < smallest_snapshot are not significant since we
-        // will never have to service a snapshot below smallest_snapshot.
-        // Therefore if we have seen a sequence number S <= smallest_snapshot,
+        Compaction *const compaction_;
+
+        // Sequence numbers < smallestSnapshot_ are not significant since we
+        // will never have to service a snapshot below smallestSnapshot_.
+        // Therefore if we have seen a sequence number S <= smallestSnapshot_,
         // we can drop all entries for the same key with sequence numbers < S.
-        SequenceNumber smallest_snapshot;
+        SequenceNumber smallestSnapshot_;
 
-        std::vector<Output> outputs;
+        std::vector<Output> outPutVec_;
 
         // State kept for output being generated
-        WritableFile *outfile;
-        TableBuilder *builder;
+        WritableFile *writableFile_;
+        TableBuilder *tableBuilder_;
 
-        uint64_t total_bytes;
+        uint64_t totalByteLen_;
     };
 
 // Fix user-supplied options to be reasonable
@@ -145,10 +149,10 @@ namespace leveldb {
                                         options_,
                                         TableCacheSize(options_))),
               db_lock_(nullptr),
-              shutting_down_(false),
+              shuttingDown(false),
               background_work_finished_signal_(&mutex),
               memTable_(nullptr),
-              immutableMemTable(nullptr),
+              immutableMemTable_(nullptr),
               hasImmutableMemTable_(false),
               logFileWritable_(nullptr),
               logFileNumber_(0),
@@ -165,7 +169,7 @@ namespace leveldb {
     DBImpl::~DBImpl() {
         // Wait for background work to finish.
         mutex.Lock();
-        shutting_down_.store(true, std::memory_order_release);
+        shuttingDown.store(true, std::memory_order_release);
         while (backgroundCompactionScheduled_) {
             background_work_finished_signal_.Wait();
         }
@@ -177,7 +181,7 @@ namespace leveldb {
 
         delete versionSet;
         if (memTable_ != nullptr) memTable_->Unref();
-        if (immutableMemTable != nullptr) immutableMemTable->Unref();
+        if (immutableMemTable_ != nullptr) immutableMemTable_->Unref();
         delete tmpWriteBatch_;
         delete logWriter_;
         delete logFileWritable_;
@@ -193,7 +197,7 @@ namespace leveldb {
 
     Status DBImpl::NewDB() {
         VersionEdit versionEdit;
-        versionEdit.SetComparatorName(user_comparator()->Name());
+        versionEdit.SetComparatorName(userComparator()->Name());
         versionEdit.SetLogNumber(0);
         versionEdit.SetNextFile(2);
         versionEdit.SetLastSequence(0);
@@ -248,41 +252,43 @@ namespace leveldb {
     void DBImpl::RemoveObsoleteFiles() {
         mutex.AssertHeld();
 
+        // After a background error, we don't know whether a new version may
+        // or may not have been committed, so we cannot safely garbage collect
         if (!bg_error_.ok()) {
-            // After a background error, we don't know whether a new version may
-            // or may not have been committed, so we cannot safely garbage collect.
             return;
         }
 
-        // Make a set of all of the live files
+        // a set of all of the live files
         std::set<uint64_t> live = pendingOutputFileNumberArr;
         versionSet->AddLiveFiles(&live);
 
-        std::vector<std::string> filenames;
-        env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
-        uint64_t number;
-        FileType type;
-        std::vector<std::string> files_to_delete;
-        for (std::string &filename: filenames) {
-            if (ParseFileName(filename, &number, &type)) {
+        std::vector<std::string> fileNameVec;
+        env_->GetChildren(dbname_, &fileNameVec);  // Ignoring errors on purpose
+
+        uint64_t fileNumber;
+        FileType fileType;
+        std::vector<std::string> fileNameVecToDelete;
+
+        for (std::string &fileName: fileNameVec) {
+            if (ParseFileName(fileName, &fileNumber, &fileType)) {
                 bool keep = true;
-                switch (type) {
+                switch (fileType) {
                     case kLogFile:
-                        keep = ((number >= versionSet->LogNumber()) ||
-                                (number == versionSet->PrevLogNumber()));
+                        keep = ((fileNumber >= versionSet->LogNumber()) ||
+                                (fileNumber == versionSet->PrevLogNumber()));
                         break;
                     case kDescriptorFile:
                         // Keep my manifest file, and any newer incarnations'
                         // (in case there is a race that allows other incarnations)
-                        keep = (number >= versionSet->ManifestFileNumber());
+                        keep = (fileNumber >= versionSet->ManifestFileNumber());
                         break;
                     case kTableFile:
-                        keep = (live.find(number) != live.end());
+                        keep = (live.find(fileNumber) != live.end());
                         break;
                     case kTempFile:
                         // Any temp files that are currently being written to must
                         // be recorded in pendingOutputFileNumberArr, which is inserted into "live"
-                        keep = (live.find(number) != live.end());
+                        keep = (live.find(fileNumber) != live.end());
                         break;
                     case kCurrentFile:
                     case kDBLockFile:
@@ -292,12 +298,12 @@ namespace leveldb {
                 }
 
                 if (!keep) {
-                    files_to_delete.push_back(std::move(filename));
-                    if (type == kTableFile) {
-                        tableCache->Evict(number);
+                    fileNameVecToDelete.push_back(std::move(fileName));
+                    if (fileType == kTableFile) {
+                        tableCache->Evict(fileNumber);
                     }
-                    Log(options_.logger, "Delete type=%d #%lld\n", static_cast<int>(type),
-                        static_cast<unsigned long long>(number));
+                    Log(options_.logger, "Delete fileType=%d #%lld\n", static_cast<int>(fileType),
+                        static_cast<unsigned long long>(fileNumber));
                 }
             }
         }
@@ -306,7 +312,7 @@ namespace leveldb {
         // have unique names which will not collide with newly created files and
         // are therefore safe to delete while allowing other threads to proceed.
         mutex.Unlock();
-        for (const std::string &filename: files_to_delete) {
+        for (const std::string &filename: fileNameVecToDelete) {
             env_->RemoveFile(dbname_ + "/" + filename);
         }
         mutex.Lock();
@@ -532,7 +538,7 @@ namespace leveldb {
 
         delete logFileSequential;
 
-        // 这边的逻辑会决定要必要把函数新生成的memTable注入到dbImple
+        // 这边的逻辑会决定要必要把函数新生成的memTable注入到dbImpl
         // See if we should keep reusing the last log logFileSequential
         if (status.ok() && options_.reuseLogs && lastLog && compactionRound == 0) {
             assert(logFileWritable_ == nullptr);
@@ -580,11 +586,12 @@ namespace leveldb {
 
         const uint64_t startMicros = env_->NowMicros();
 
+        // 新生成的ldb文件对应的meta
         FileMetaData fileMetaData;
         fileMetaData.number = versionSet->NewFileNumber();
         pendingOutputFileNumberArr.insert(fileMetaData.number);
 
-        Iterator *iterator = memTable->NewIterator();
+        Iterator *memTableIter = memTable->NewIterator();
 
         Log(options_.logger, "Level-0 table #%llu: started", (unsigned long long) fileMetaData.number);
 
@@ -592,11 +599,12 @@ namespace leveldb {
 
         {
             mutex.Unlock();
+            // 落地生成了table对应的ldb文件
             status = BuildTable(dbname_,
                                 env_,
                                 options_,
                                 tableCache,
-                                iterator,
+                                memTableIter,
                                 &fileMetaData);
             mutex.Lock();
         }
@@ -607,14 +615,14 @@ namespace leveldb {
             (unsigned long long) fileMetaData.fileSize_,
             status.ToString().c_str());
 
-        delete iterator;
+        delete memTableIter;
         pendingOutputFileNumberArr.erase(fileMetaData.number);
 
         // Note that if fileSize_ is zero, the file has been deleted and should not be added to the manifest.
         int level = 0;
         if (status.ok() && fileMetaData.fileSize_ > 0) {
-            const Slice min_user_key = fileMetaData.smallestInternalKey_.user_key();
-            const Slice max_user_key = fileMetaData.largestInternalKey_.user_key();
+            const Slice min_user_key = fileMetaData.smallestInternalKey_.userKey();
+            const Slice max_user_key = fileMetaData.largestInternalKey_.userKey();
             if (baseVersion != nullptr) {
                 level = baseVersion->PickLevelForMemTableOutput(min_user_key, max_user_key);
             }
@@ -634,33 +642,34 @@ namespace leveldb {
         return status;
     }
 
+    // 目标是immutableMemTable
     void DBImpl::CompactMemTable() {
         mutex.AssertHeld();
-        assert(immutableMemTable != nullptr);
+        assert(immutableMemTable_ != nullptr);
 
-        // save the content of the immutableMemTable as a new Table
+        // save the content of the immutableMemTable_ as a new Table
         VersionEdit versionEdit;
 
         Version *currentVersion = versionSet->current();
         currentVersion->Ref();
-        Status status = this->WriteLevel0Table(immutableMemTable, &versionEdit, currentVersion);
+        Status status = this->WriteLevel0Table(immutableMemTable_, &versionEdit, currentVersion);
         currentVersion->Unref();
 
-        if (status.ok() && shutting_down_.load(std::memory_order_acquire)) {
-            status = Status::IOError("Deleting DB during memtable compaction");
+        if (status.ok() && shuttingDown.load(std::memory_order_acquire)) {
+            status = Status::IOError("Deleting DB during memtable compaction_");
         }
 
         // replace immutable memtable with the generated Table
         if (status.ok()) {
             versionEdit.SetPrevLogNumber(0);
-            versionEdit.SetLogNumber(logFileNumber_);  // Earlier logs no longer needed
+            versionEdit.SetLogNumber(logFileNumber_);  // earlier logs no longer needed
             status = versionSet->LogAndApply(&versionEdit, &mutex);
         }
 
         if (status.ok()) {
             // Commit to the new state
-            immutableMemTable->Unref();
-            immutableMemTable = nullptr;
+            immutableMemTable_->Unref();
+            immutableMemTable_ = nullptr;
             hasImmutableMemTable_.store(false, std::memory_order_release);
             RemoveObsoleteFiles();
         } else {
@@ -709,17 +718,17 @@ namespace leveldb {
         }
 
         MutexLock l(&mutex);
-        while (!manual.done && !shutting_down_.load(std::memory_order_acquire) &&
+        while (!manual.done && !shuttingDown.load(std::memory_order_acquire) &&
                bg_error_.ok()) {
             if (manualCompaction_ == nullptr) {  // Idle
                 manualCompaction_ = &manual;
                 MaybeScheduleCompaction();
-            } else {  // Running either my compaction or another compaction.
+            } else {  // Running either my compaction_ or another compaction_.
                 background_work_finished_signal_.Wait();
             }
         }
         if (manualCompaction_ == &manual) {
-            // Cancel my manual compaction since we aborted early for some reason.
+            // Cancel my manual compaction_ since we aborted early for some reason.
             manualCompaction_ = nullptr;
         }
     }
@@ -728,12 +737,12 @@ namespace leveldb {
         // nullptr writeBatch_ means just wait for earlier writes to be done
         Status s = Write(WriteOptions(), nullptr);
         if (s.ok()) {
-            // Wait until the compaction completes
+            // Wait until the compaction_ completes
             MutexLock l(&mutex);
-            while (immutableMemTable != nullptr && bg_error_.ok()) {
+            while (immutableMemTable_ != nullptr && bg_error_.ok()) {
                 background_work_finished_signal_.Wait();
             }
-            if (immutableMemTable != nullptr) {
+            if (immutableMemTable_ != nullptr) {
                 s = bg_error_;
             }
         }
@@ -757,7 +766,7 @@ namespace leveldb {
         }
 
         // DB is being deleted; no more background compactions
-        if (shutting_down_.load(std::memory_order_acquire)) {
+        if (shuttingDown.load(std::memory_order_acquire)) {
             return;
         }
 
@@ -767,7 +776,7 @@ namespace leveldb {
         }
 
         // No work to be done
-        if (immutableMemTable == nullptr &&
+        if (immutableMemTable_ == nullptr &&
             manualCompaction_ == nullptr &&
             !versionSet->NeedsCompaction()) {
             return;
@@ -786,7 +795,7 @@ namespace leveldb {
         assert(backgroundCompactionScheduled_);
 
         // No more background work when shutting down.
-        if (shutting_down_.load(std::memory_order_acquire)) {
+        if (shuttingDown.load(std::memory_order_acquire)) {
 
         } else if (!bg_error_.ok()) {  // No more background work after a background error.
 
@@ -796,7 +805,7 @@ namespace leveldb {
 
         backgroundCompactionScheduled_ = false;
 
-        // previous round may have produced too many files in a level,reschedule another compaction if needed.
+        // previous round may have produced too many files in a level,reschedule another compaction_ if needed.
         this->MaybeScheduleCompaction();
         background_work_finished_signal_.SignalAll();
     }
@@ -804,7 +813,7 @@ namespace leveldb {
     void DBImpl::BackgroundCompaction() {
         mutex.AssertHeld();
 
-        if (immutableMemTable != nullptr) {
+        if (immutableMemTable_ != nullptr) {
             this->CompactMemTable();
             return;
         }
@@ -823,7 +832,7 @@ namespace leveldb {
             }
 
             Log(options_.logger,
-                "Manual compaction at level-%d from %s .. %s; will stop at %s\n",
+                "Manual compaction_ at level-%d from %s .. %s; will stop at %s\n",
                 m->level, (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
                 (m->end ? m->end->DebugString().c_str() : "(end)"),
                 (m->done ? "(end)" : manualEnd.DebugString().c_str()));
@@ -835,7 +844,7 @@ namespace leveldb {
 
         if (compaction == nullptr) {
             // Nothing to do
-        } else if (!isManual && compaction->IsTrivialMove()) {// Move file to next level
+        } else if (!isManual && compaction->IsTrivialMove()) {// move file to next level
             assert(compaction->num_input_files(0) == 1);
 
             FileMetaData *fileMetaData = compaction->input(0, 0);
@@ -855,27 +864,33 @@ namespace leveldb {
 
             VersionSet::LevelSummaryStorage tmp{};
 
-            Log(options_.logger, "Moved #%lld to level-%d %lld bytes %s: %s\n",
-                static_cast<unsigned long long>(fileMetaData->number), compaction->level() + 1,
+            Log(options_.logger,
+                "Moved #%lld to level-%d %lld bytes %s: %s\n",
+                static_cast<unsigned long long>(fileMetaData->number),
+                compaction->level() + 1,
                 static_cast<unsigned long long>(fileMetaData->fileSize_),
-                status.ToString().c_str(), versionSet->LevelSummary(&tmp));
+                status.ToString().c_str(),
+                versionSet->LevelSummary(&tmp));
         } else {
             auto *compactionState = new CompactionState(compaction);
-            status = DoCompactionWork(compactionState);
+
+            status = this->DoCompactionWork(compactionState);
             if (!status.ok()) {
                 RecordBackgroundError(status);
             }
 
             CleanupCompaction(compactionState);
+
             compaction->ReleaseInputs();
+
             RemoveObsoleteFiles();
         }
         delete compaction;
 
         if (status.ok()) {
             // Done
-        } else if (shutting_down_.load(std::memory_order_acquire)) {
-            // Ignore compaction errors found during shutting down
+        } else if (shuttingDown.load(std::memory_order_acquire)) {
+            // Ignore compaction_ errors found during shutting down
         } else {
             Log(options_.logger, "Compaction error: %s", status.ToString().c_str());
         }
@@ -900,25 +915,30 @@ namespace leveldb {
 
     void DBImpl::CleanupCompaction(CompactionState *compact) {
         mutex.AssertHeld();
-        if (compact->builder != nullptr) {
-            // May happen if we get a shutdown call in the middle of compaction
-            compact->builder->Abandon();
-            delete compact->builder;
+
+        if (compact->tableBuilder_ != nullptr) {
+            // May happen if we get a shutdown call in the middle of compaction_
+            compact->tableBuilder_->Abandon();
+            delete compact->tableBuilder_;
         } else {
-            assert(compact->outfile == nullptr);
+            assert(compact->writableFile_ == nullptr);
         }
-        delete compact->outfile;
-        for (size_t i = 0; i < compact->outputs.size(); i++) {
-            const CompactionState::Output &out = compact->outputs[i];
-            pendingOutputFileNumberArr.erase(out.number);
+
+        delete compact->writableFile_;
+
+        for (auto &outPut: compact->outPutVec_) {
+            pendingOutputFileNumberArr.erase(outPut.number);
         }
+
         delete compact;
     }
 
-    Status DBImpl::OpenCompactionOutputFile(CompactionState *compact) {
-        assert(compact != nullptr);
-        assert(compact->builder == nullptr);
+    Status DBImpl::OpenCompactionOutputFile(CompactionState *compactionState) {
+        assert(compactionState != nullptr);
+        assert(compactionState->tableBuilder_ == nullptr);
+
         uint64_t file_number;
+
         {
             mutex.Lock();
             file_number = versionSet->NewFileNumber();
@@ -927,15 +947,15 @@ namespace leveldb {
             out.number = file_number;
             out.smallest.Clear();
             out.largest.Clear();
-            compact->outputs.push_back(out);
+            compactionState->outPutVec_.push_back(out);
             mutex.Unlock();
         }
 
         // Make the output file
         std::string fname = TableFileName(dbname_, file_number);
-        Status s = env_->NewWritableFile(fname, &compact->outfile);
+        Status s = env_->NewWritableFile(fname, &compactionState->writableFile_);
         if (s.ok()) {
-            compact->builder = new TableBuilder(options_, compact->outfile);
+            compactionState->tableBuilder_ = new TableBuilder(options_, compactionState->writableFile_);
         }
         return s;
     }
@@ -943,45 +963,45 @@ namespace leveldb {
     Status DBImpl::FinishCompactionOutputFile(CompactionState *compact,
                                               Iterator *input) {
         assert(compact != nullptr);
-        assert(compact->outfile != nullptr);
-        assert(compact->builder != nullptr);
+        assert(compact->writableFile_ != nullptr);
+        assert(compact->tableBuilder_ != nullptr);
 
         const uint64_t output_number = compact->current_output()->number;
         assert(output_number != 0);
 
         // Check for iterator errors
         Status s = input->status();
-        const uint64_t current_entries = compact->builder->NumEntries();
+        const uint64_t current_entries = compact->tableBuilder_->NumEntries();
         if (s.ok()) {
-            s = compact->builder->Finish();
+            s = compact->tableBuilder_->Finish();
         } else {
-            compact->builder->Abandon();
+            compact->tableBuilder_->Abandon();
         }
-        const uint64_t current_bytes = compact->builder->FileSize();
-        compact->current_output()->file_size = current_bytes;
-        compact->total_bytes += current_bytes;
-        delete compact->builder;
-        compact->builder = nullptr;
+        const uint64_t current_bytes = compact->tableBuilder_->FileSize();
+        compact->current_output()->fileSize = current_bytes;
+        compact->totalByteLen_ += current_bytes;
+        delete compact->tableBuilder_;
+        compact->tableBuilder_ = nullptr;
 
         // Finish and check for file errors
         if (s.ok()) {
-            s = compact->outfile->Sync();
+            s = compact->writableFile_->Sync();
         }
         if (s.ok()) {
-            s = compact->outfile->Close();
+            s = compact->writableFile_->Close();
         }
-        delete compact->outfile;
-        compact->outfile = nullptr;
+        delete compact->writableFile_;
+        compact->writableFile_ = nullptr;
 
         if (s.ok() && current_entries > 0) {
-            // Verify that the table is usable
+            // 确保 ldb文件is usable,把ldb再重新load进来瞧瞧会不会报错
             Iterator *iter =
                     tableCache->NewIterator(ReadOptions(), output_number, current_bytes);
             s = iter->status();
             delete iter;
             if (s.ok()) {
                 Log(options_.logger, "Generated table #%llu@%d: %lld keys, %lld bytes",
-                    (unsigned long long) output_number, compact->compaction->level(),
+                    (unsigned long long) output_number, compact->compaction_->level(),
                     (unsigned long long) current_entries,
                     (unsigned long long) current_bytes);
             }
@@ -989,71 +1009,83 @@ namespace leveldb {
         return s;
     }
 
+    // 调用logAndApply
     Status DBImpl::InstallCompactionResults(CompactionState *compact) {
         mutex.AssertHeld();
         Log(options_.logger, "Compacted %d@%d + %d@%d files => %lld bytes",
-            compact->compaction->num_input_files(0), compact->compaction->level(),
-            compact->compaction->num_input_files(1), compact->compaction->level() + 1,
-            static_cast<long long>(compact->total_bytes));
+            compact->compaction_->num_input_files(0), compact->compaction_->level(),
+            compact->compaction_->num_input_files(1), compact->compaction_->level() + 1,
+            static_cast<long long>(compact->totalByteLen_));
 
-        // Add compaction outputs
-        compact->compaction->AddInputDeletions(compact->compaction->edit());
-        const int level = compact->compaction->level();
-        for (size_t i = 0; i < compact->outputs.size(); i++) {
-            const CompactionState::Output &out = compact->outputs[i];
-            compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
-                                                 out.smallest, out.largest);
+        // Add compaction_ outPutVec_
+        compact->compaction_->AddInputDeletions(compact->compaction_->edit());
+        const int level = compact->compaction_->level();
+        for (size_t i = 0; i < compact->outPutVec_.size(); i++) {
+            const CompactionState::Output &out = compact->outPutVec_[i];
+            compact->compaction_->edit()->AddFile(level + 1, out.number, out.fileSize,
+                                                  out.smallest, out.largest);
         }
-        return versionSet->LogAndApply(compact->compaction->edit(), &mutex);
+        return versionSet->LogAndApply(compact->compaction_->edit(), &mutex);
     }
 
-    Status DBImpl::DoCompactionWork(CompactionState *compact) {
-        const uint64_t start_micros = env_->NowMicros();
-        int64_t imm_micros = 0;  // Micros spent doing immutableMemTable compactions
+    Status DBImpl::DoCompactionWork(CompactionState *compactionState) {
+        const uint64_t startMicros = env_->NowMicros();
+        int64_t immMicros = 0;  // Micros spent doing immutableMemTable_ compactions
 
         Log(options_.logger, "Compacting %d@%d + %d@%d files",
-            compact->compaction->num_input_files(0), compact->compaction->level(),
-            compact->compaction->num_input_files(1),
-            compact->compaction->level() + 1);
+            compactionState->compaction_->num_input_files(0),
+            compactionState->compaction_->level(),
+            compactionState->compaction_->num_input_files(1),
+            compactionState->compaction_->level() + 1);
 
-        assert(versionSet->NumLevelFiles(compact->compaction->level()) > 0);
-        assert(compact->builder == nullptr);
-        assert(compact->outfile == nullptr);
-        if (snapshots_.empty()) {
-            compact->smallest_snapshot = versionSet->LastSequence();
+        assert(versionSet->NumLevelFiles(compactionState->compaction_->level()) > 0);
+        assert(compactionState->tableBuilder_ == nullptr);
+        assert(compactionState->writableFile_ == nullptr);
+
+        if (snapshotList_.empty()) {
+            compactionState->smallestSnapshot_ = versionSet->LastSequence();
         } else {
-            compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
+            compactionState->smallestSnapshot_ = snapshotList_.oldest()->sequenceNumber();
         }
 
-        Iterator *input = versionSet->MakeInputIterator(compact->compaction);
+        // 涵盖compaction的inputFileMetaDataVecArr_
+        Iterator *mergeIter = versionSet->MakeInputIterator(compactionState->compaction_);
 
-        // Release mutex while we're actually doing the compaction work
+        // release mutex while doing the compaction_ work
         mutex.Unlock();
 
-        input->SeekToFirst();
+        mergeIter->SeekToFirst();
+
         Status status;
-        ParsedInternalKey ikey;
-        std::string current_user_key;
-        bool has_current_user_key = false;
-        SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
-        while (input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
-            // Prioritize immutable compaction work
+        ParsedInternalKey parsedInternalKey;
+        std::string currentUserKey;
+        bool hasCurrentUserKey = false;
+        SequenceNumber lastSequenceForKey = kMaxSequenceNumber;
+
+        while (mergeIter->Valid() && !shuttingDown.load(std::memory_order_acquire)) {
+
+            // 优先 CompactMemTable()
             if (hasImmutableMemTable_.load(std::memory_order_relaxed)) {
-                const uint64_t imm_start = env_->NowMicros();
+                const uint64_t immStart = env_->NowMicros();
+
                 mutex.Lock();
-                if (immutableMemTable != nullptr) {
+                if (immutableMemTable_ != nullptr) {
                     CompactMemTable();
+
                     // Wake up MakeRoomForWrite() if necessary.
                     background_work_finished_signal_.SignalAll();
                 }
                 mutex.Unlock();
-                imm_micros += (env_->NowMicros() - imm_start);
+
+                immMicros += (env_->NowMicros() - immStart);
             }
 
-            Slice key = input->key();
-            if (compact->compaction->ShouldStopBefore(key) &&
-                compact->builder != nullptr) {
-                status = FinishCompactionOutputFile(compact, input);
+            Slice key = mergeIter->key();
+
+            if (compactionState->tableBuilder_ != nullptr &&
+                compactionState->compaction_->ShouldStopBefore(key)) {
+
+                status = FinishCompactionOutputFile(compactionState, mergeIter);
                 if (!status.ok()) {
                     break;
                 }
@@ -1061,27 +1093,31 @@ namespace leveldb {
 
             // Handle key/value, add to state, etc.
             bool drop = false;
-            if (!ParseInternalKey(key, &ikey)) {
-                // Do not hide error keys
-                current_user_key.clear();
-                has_current_user_key = false;
-                last_sequence_for_key = kMaxSequenceNumber;
+
+            // valueType不对
+            if (!ParseInternalKey(key, &parsedInternalKey)) {
+                // do not hide error keys
+                currentUserKey.clear();
+                hasCurrentUserKey = false;
+                lastSequenceForKey = kMaxSequenceNumber;
             } else {
-                if (!has_current_user_key ||
-                    user_comparator()->Compare(ikey.userKey, Slice(current_user_key)) !=
-                    0) {
-                    // First occurrence of this user key
-                    current_user_key.assign(ikey.userKey.data(), ikey.userKey.size());
-                    has_current_user_key = true;
-                    last_sequence_for_key = kMaxSequenceNumber;
+
+                // 头趟
+                if (!hasCurrentUserKey ||
+                    this->userComparator()->Compare(parsedInternalKey.userKey, Slice(currentUserKey)) != 0) {
+
+                    hasCurrentUserKey = true;
+                    currentUserKey.assign(parsedInternalKey.userKey.data(), parsedInternalKey.userKey.size());
+
+                    lastSequenceForKey = kMaxSequenceNumber;
                 }
 
-                if (last_sequence_for_key <= compact->smallest_snapshot) {
-                    // Hidden by an newer entry for same user key
+                // hidden by an newer entry for same user key
+                if (lastSequenceForKey <= compactionState->smallestSnapshot_) {
                     drop = true;  // (A)
-                } else if (ikey.type == kTypeDeletion &&
-                           ikey.sequence <= compact->smallest_snapshot &&
-                           compact->compaction->IsBaseLevelForKey(ikey.userKey)) {
+                } else if (parsedInternalKey.type == kTypeDeletion &&
+                           parsedInternalKey.sequence <= compactionState->smallestSnapshot_ &&
+                           compactionState->compaction_->IsBaseLevelForKey(parsedInternalKey.userKey)) {
                     // For this user key:
                     // (1) there is no data in higher levels
                     // (2) data in lower levels will have larger sequence numbers
@@ -1092,79 +1128,85 @@ namespace leveldb {
                     drop = true;
                 }
 
-                last_sequence_for_key = ikey.sequence;
+                lastSequenceForKey = parsedInternalKey.sequence;
             }
 #if 0
             Log(options_.logger,
                 "  Compact: %s, seq %d, type: %d %d, drop: %d, is_base: %d, "
-                "%d smallest_snapshot: %d",
-                ikey.userKey.ToString().c_str(),
-                (int)ikey.sequence, ikey.type, kTypeValue, drop,
-                compact->compaction->IsBaseLevelForKey(ikey.userKey),
-                (int)last_sequence_for_key, (int)compact->smallest_snapshot);
+                "%d smallestSnapshot_: %d",
+                parsedInternalKey.userKey.ToString().c_str(),
+                (int)parsedInternalKey.sequence, parsedInternalKey.type, kTypeValue, drop,
+                compactionState->compaction_->IsBaseLevelForKey(parsedInternalKey.userKey),
+                (int)lastSequenceForKey, (int)compactionState->smallestSnapshot_);
 #endif
 
             if (!drop) {
-                // Open output file if necessary
-                if (compact->builder == nullptr) {
-                    status = OpenCompactionOutputFile(compact);
+                // open output file if necessary
+                if (compactionState->tableBuilder_ == nullptr) {
+                    status = this->OpenCompactionOutputFile(compactionState);
                     if (!status.ok()) {
                         break;
                     }
                 }
-                if (compact->builder->NumEntries() == 0) {
-                    compact->current_output()->smallest.DecodeFrom(key);
-                }
-                compact->current_output()->largest.DecodeFrom(key);
-                compact->builder->Add(key, input->value());
 
-                // Close output file if it is big enough
-                if (compact->builder->FileSize() >=
-                    compact->compaction->MaxOutputFileSize()) {
-                    status = FinishCompactionOutputFile(compact, input);
+                if (compactionState->tableBuilder_->NumEntries() == 0) {
+                    compactionState->current_output()->smallest.DecodeFrom(key);
+                }
+                compactionState->current_output()->largest.DecodeFrom(key);
+
+                compactionState->tableBuilder_->Add(key, mergeIter->value());
+
+                // 大小足够大了需要落地
+                if (compactionState->tableBuilder_->FileSize() >= compactionState->compaction_->MaxOutputFileSize()) {
+                    status = FinishCompactionOutputFile(compactionState, mergeIter);
                     if (!status.ok()) {
                         break;
                     }
                 }
             }
 
-            input->Next();
-        }
+            mergeIter->Next();
 
-        if (status.ok() && shutting_down_.load(std::memory_order_acquire)) {
-            status = Status::IOError("Deleting DB during compaction");
+        } // end while
+
+        if (status.ok() && shuttingDown.load(std::memory_order_acquire)) {
+            status = Status::IOError("Deleting DB during compaction_");
         }
-        if (status.ok() && compact->builder != nullptr) {
-            status = FinishCompactionOutputFile(compact, input);
+        if (status.ok() && compactionState->tableBuilder_ != nullptr) {
+            status = FinishCompactionOutputFile(compactionState, mergeIter);
         }
         if (status.ok()) {
-            status = input->status();
+            status = mergeIter->status();
         }
-        delete input;
-        input = nullptr;
 
-        CompactionStats stats;
-        stats.micros = env_->NowMicros() - start_micros - imm_micros;
+        delete mergeIter;
+        mergeIter = nullptr;
+
+        // stat
+        CompactionStats compactionStats;
+        compactionStats.micros = env_->NowMicros() - startMicros - immMicros;
         for (int which = 0; which < 2; which++) {
-            for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
-                stats.bytes_read += compact->compaction->input(which, i)->fileSize_;
+            for (int i = 0; i < compactionState->compaction_->num_input_files(which); i++) {
+                compactionStats.bytes_read += compactionState->compaction_->input(which, i)->fileSize_;
             }
         }
-        for (size_t i = 0; i < compact->outputs.size(); i++) {
-            stats.bytes_written += compact->outputs[i].file_size;
+        for (auto &outPut: compactionState->outPutVec_) {
+            compactionStats.bytes_written += outPut.fileSize;
         }
 
         mutex.Lock();
-        compactionStatArr[compact->compaction->level() + 1].Add(stats);
+
+        compactionStatArr[compactionState->compaction_->level() + 1].Add(compactionStats);
 
         if (status.ok()) {
-            status = InstallCompactionResults(compact);
-        }
-        if (!status.ok()) {
+            status = InstallCompactionResults(compactionState);
+        } else {
             RecordBackgroundError(status);
         }
-        VersionSet::LevelSummaryStorage tmp;
+
+        VersionSet::LevelSummaryStorage tmp{};
         Log(options_.logger, "compacted to: %s", versionSet->LevelSummary(&tmp));
+
         return status;
     }
 
@@ -1202,16 +1244,16 @@ namespace leveldb {
         std::vector<Iterator *> list;
         list.push_back(memTable_->NewIterator());
         memTable_->Ref();
-        if (immutableMemTable != nullptr) {
-            list.push_back(immutableMemTable->NewIterator());
-            immutableMemTable->Ref();
+        if (immutableMemTable_ != nullptr) {
+            list.push_back(immutableMemTable_->NewIterator());
+            immutableMemTable_->Ref();
         }
         versionSet->current()->AddIterators(options, &list);
         Iterator *internal_iter =
                 NewMergingIterator(&internalKeyComparator, &list[0], list.size());
         versionSet->current()->Ref();
 
-        IterState *cleanup = new IterState(&mutex, memTable_, immutableMemTable, versionSet->current());
+        IterState *cleanup = new IterState(&mutex, memTable_, immutableMemTable_, versionSet->current());
         internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);
 
         *seed = ++seed_;
@@ -1230,62 +1272,73 @@ namespace leveldb {
         return versionSet->MaxNextLevelOverlappingBytes();
     }
 
-    Status DBImpl::Get(const ReadOptions &options, const Slice &key,
+    Status DBImpl::Get(const ReadOptions &options,
+                       const Slice &key,
                        std::string *value) {
-        Status s;
-        MutexLock l(&mutex);
+        Status status;
+
+        MutexLock mutexLock(&mutex);
+
         SequenceNumber snapshot;
         if (options.snapshot != nullptr) {
-            snapshot =
-                    static_cast<const SnapshotImpl *>(options.snapshot)->sequence_number();
+            snapshot = static_cast<const SnapshotImpl *>(options.snapshot)->sequenceNumber();
         } else {
             snapshot = versionSet->LastSequence();
         }
 
-        MemTable *mem = memTable_;
-        MemTable *imm = immutableMemTable;
-        Version *current = versionSet->current();
-        mem->Ref();
-        if (imm != nullptr) imm->Ref();
-        current->Ref();
+        MemTable *memTable = memTable_;
+        MemTable *immutableMemTable = immutableMemTable_;
+        Version *currentVersion = versionSet->current();
 
-        bool have_stat_update = false;
-        Version::GetStats stats;
+        memTable->Ref();
+        if (immutableMemTable != nullptr) {
+            immutableMemTable->Ref();
+        }
+        currentVersion->Ref();
 
-        // Unlock while reading from files and memtables
+        bool haveStatUpdate = false;
+
+        // unlock while reading from files and memtable
+        Version::GetStats getStats{};
         {
             mutex.Unlock();
-            // First look in the memtable, then in the immutable memtable (if any).
-            LookupKey lkey(key, snapshot);
-            if (mem->Get(lkey, value, &s)) {
+
+            // first look in the memtable, then in the immutable memtable (if any).
+            LookupKey lookupKey(key, snapshot);
+
+            // memTable
+            if (memTable->Get(lookupKey, value, &status)) {
                 // Done
-            } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
+            } else if (immutableMemTable != nullptr && immutableMemTable->Get(lookupKey, value, &status)) { // immutable
                 // Done
             } else {
-                s = current->Get(options, lkey, value, &stats);
-                have_stat_update = true;
+                status = currentVersion->Get(options, lookupKey, value, &getStats);
+                haveStatUpdate = true;
             }
+
             mutex.Lock();
         }
 
-        if (have_stat_update && current->UpdateStats(stats)) {
+        if (haveStatUpdate && currentVersion->UpdateStats(getStats)) {
             MaybeScheduleCompaction();
         }
-        mem->Unref();
-        if (imm != nullptr) imm->Unref();
-        current->Unref();
-        return s;
+
+        memTable->Unref();
+        if (immutableMemTable != nullptr) {
+            immutableMemTable->Unref();
+        }
+        currentVersion->Unref();
+
+        return status;
     }
 
     Iterator *DBImpl::NewIterator(const ReadOptions &options) {
         SequenceNumber latest_snapshot;
         uint32_t seed;
         Iterator *iter = NewInternalIterator(options, &latest_snapshot, &seed);
-        return NewDBIterator(this, user_comparator(), iter,
+        return NewDBIterator(this, userComparator(), iter,
                              (options.snapshot != nullptr
-                              ? static_cast<const SnapshotImpl *>(options.snapshot)
-                                      ->sequence_number()
-                              : latest_snapshot),
+                              ? static_cast<const SnapshotImpl *>(options.snapshot)->sequenceNumber() : latest_snapshot),
                              seed);
     }
 
@@ -1298,12 +1351,12 @@ namespace leveldb {
 
     const Snapshot *DBImpl::GetSnapshot() {
         MutexLock l(&mutex);
-        return snapshots_.New(versionSet->LastSequence());
+        return snapshotList_.New(versionSet->LastSequence());
     }
 
     void DBImpl::ReleaseSnapshot(const Snapshot *snapshot) {
         MutexLock l(&mutex);
-        snapshots_.Delete(static_cast<const SnapshotImpl *>(snapshot));
+        snapshotList_.Delete(static_cast<const SnapshotImpl *>(snapshot));
     }
 
     // Convenience method
@@ -1489,7 +1542,7 @@ namespace leveldb {
                 // L0 files.  Rather than delaying a single write by several
                 // seconds when we hit the hard limit, start delaying each
                 // individual write by 1ms to reduce latency variance.  Also,
-                // this delay hands over some CPU to the compaction thread in
+                // this delay hands over some CPU to the compaction_ thread in
                 // case it is sharing the same core as the writer.
                 mutex.Unlock();
                 env_->SleepForMicroseconds(1000);
@@ -1499,14 +1552,14 @@ namespace leveldb {
             } else if (!force && (memTable_->ApproximateMemoryUsage() <= options_.writeBufferSize)) {
                 // there is room in current memtable
                 break;
-            } else if (immutableMemTable != nullptr) { // 当前的memtable写满,而immutableTable is being compacted, wait.
+            } else if (immutableMemTable_ != nullptr) { // 当前的memtable写满,而immutableTable is being compacted, wait.
                 Log(options_.logger, "current memtable full; waiting...\n");
                 background_work_finished_signal_.Wait();
             } else if (versionSet->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
                 // There are too many level-0 file
                 Log(options_.logger, "too many L0 files; waiting...\n");
                 background_work_finished_signal_.Wait();
-            } else { // 切换到了new memtable and trigger compaction of old(变成了immutable的memTable)
+            } else { // 切换到了new memtable and trigger compaction_ of old(变成了immutable的memTable)
                 assert(versionSet->PrevLogNumber() == 0);
 
                 uint64_t newLogNumber = versionSet->NewFileNumber();
@@ -1525,12 +1578,12 @@ namespace leveldb {
                 logFileNumber_ = newLogNumber;
                 logWriter_ = new log::Writer(newLogFileWritable);
 
-                immutableMemTable = memTable_;
+                immutableMemTable_ = memTable_;
                 hasImmutableMemTable_.store(true, std::memory_order_release);
                 memTable_ = new MemTable(internalKeyComparator);
                 memTable_->Ref();
 
-                // do not force another compaction if have room
+                // do not force another compaction_ if have room
                 force = false;
 
                 this->MaybeScheduleCompaction();
@@ -1596,8 +1649,8 @@ namespace leveldb {
             if (memTable_) {
                 total_usage += memTable_->ApproximateMemoryUsage();
             }
-            if (immutableMemTable) {
-                total_usage += immutableMemTable->ApproximateMemoryUsage();
+            if (immutableMemTable_) {
+                total_usage += immutableMemTable_->ApproximateMemoryUsage();
             }
             char buf[50];
             std::snprintf(buf, sizeof(buf), "%llu",
@@ -1659,8 +1712,7 @@ namespace leveldb {
             uint64_t newLogFileNumber = dbImpl->versionSet->NewFileNumber();
 
             WritableFile *logFileWritable;
-            status = options.env->NewWritableFile(LogFileName(dbname, newLogFileNumber),
-                                                  &logFileWritable);
+            status = options.env->NewWritableFile(LogFileName(dbname, newLogFileNumber), &logFileWritable);
             if (status.ok()) {
                 versionEdit.SetLogNumber(newLogFileNumber);
                 dbImpl->logFileWritable_ = logFileWritable;
@@ -1672,7 +1724,7 @@ namespace leveldb {
         }
 
         if (status.ok() && saveManifest) {
-            versionEdit.SetPrevLogNumber(0);  // No older logs needed after recovery.
+            versionEdit.SetPrevLogNumber(0);  // no older logs needed after recovery
             versionEdit.SetLogNumber(dbImpl->logFileNumber_);
             status = dbImpl->versionSet->LogAndApply(&versionEdit, &dbImpl->mutex);
         }

@@ -364,7 +364,7 @@ cached contents. A per-iterator option can be used to achieve this:
 
 ```c++
 leveldb::ReadOptions options;
-options.fill_cache = false;
+options.fillCache_ = false;
 leveldb::Iterator* it = db->NewIterator(options);
 for (it->SeekToFirst(); it->Valid(); it->Next()) {
   ...
@@ -453,7 +453,7 @@ leveldb associates checksums with all data it stores in the file system. There
 are two separate controls provided over how aggressively these checksums are
 verified:
 
-`ReadOptions::verify_checksums` may be set to true to force checksum
+`ReadOptions::verifyChecksums_` may be set to true to force checksum
 verification of all data that is read from the file system on behalf of a
 particular read.  By default, no such verification is done.
 

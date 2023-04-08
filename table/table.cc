@@ -19,36 +19,36 @@ namespace leveldb {
 
     struct Table::Rep {
         ~Rep() {
-            delete filter;
+            delete filterBlockReader_;
             delete[] filter_data;
-            delete index_block;
+            delete indexBlock_;
         }
 
         Options options;
         Status status;
         RandomAccessFile *file;
         uint64_t cache_id;
-        FilterBlockReader *filter;
+        FilterBlockReader *filterBlockReader_;
         const char *filter_data;
 
         BlockHandle metaindex_handle;  // Handle to metaindex_block: saved from footer
-        Block *index_block;
+        Block *indexBlock_;
     };
 
     Status Table::Open(const Options &options,
                        RandomAccessFile *ldbFile,
-                       uint64_t size,
+                       uint64_t ldbFileSize,
                        Table **table) {
 
         *table = nullptr;
-        if (size < Footer::ENCODED_LEN) {
+        if (ldbFileSize < Footer::ENCODED_LEN) {
             return Status::Corruption("ldbFile is too short to be an sstable");
         }
 
         char footerSpace[Footer::ENCODED_LEN];
         Slice footerInput;
 
-        Status status = ldbFile->Read(size - Footer::ENCODED_LEN,
+        Status status = ldbFile->Read(ldbFileSize - Footer::ENCODED_LEN,
                                       Footer::ENCODED_LEN,
                                       &footerInput,
                                       footerSpace);
@@ -68,7 +68,7 @@ namespace leveldb {
         BlockContents indexBlockContents;
         ReadOptions readOptions;
         if (options.paranoid_checks) {
-            readOptions.verify_checksums = true;
+            readOptions.verifyChecksums_ = true;
         }
         status = ReadBlock(ldbFile,
                            readOptions,
@@ -82,10 +82,10 @@ namespace leveldb {
             rep->options = options;
             rep->file = ldbFile;
             rep->metaindex_handle = footer.metaindex_handle();
-            rep->index_block = indexBlock;
+            rep->indexBlock_ = indexBlock;
             rep->cache_id = (options.blockCache ? options.blockCache->NewId() : 0);
             rep->filter_data = nullptr;
-            rep->filter = nullptr;
+            rep->filterBlockReader_ = nullptr;
             *table = new Table(rep);
             (*table)->ReadMeta(footer);
         }
@@ -102,7 +102,7 @@ namespace leveldb {
         // it is an empty block.
         ReadOptions opt;
         if (rep_->options.paranoid_checks) {
-            opt.verify_checksums = true;
+            opt.verifyChecksums_ = true;
         }
         BlockContents contents;
         if (!ReadBlock(rep_->file, opt, footer.metaindex_handle(), &contents).ok()) {
@@ -133,7 +133,7 @@ namespace leveldb {
         // requiring checksum verification in Table::Open.
         ReadOptions opt;
         if (rep_->options.paranoid_checks) {
-            opt.verify_checksums = true;
+            opt.verifyChecksums_ = true;
         }
         BlockContents block;
         if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
@@ -142,7 +142,7 @@ namespace leveldb {
         if (block.allocatedFromHeap_) {
             rep_->filter_data = block.data.data();  // Will need to delete later
         }
-        rep_->filter = new FilterBlockReader(rep_->options.filterPolicy, block.data);
+        rep_->filterBlockReader_ = new FilterBlockReader(rep_->options.filterPolicy, block.data);
     }
 
     Table::~Table() { delete rep_; }
@@ -164,7 +164,8 @@ namespace leveldb {
 
 // Convert an index iterator value (i.e., an encoded BlockHandle)
 // into an iterator over the contents of the corresponding block.
-    Iterator *Table::BlockReader(void *arg, const ReadOptions &options,
+    Iterator *Table::BlockReader(void *arg,
+                                 const ReadOptions &options,
                                  const Slice &index_value) {
         Table *table = reinterpret_cast<Table *>(arg);
         Cache *block_cache = table->rep_->options.blockCache;
@@ -191,7 +192,7 @@ namespace leveldb {
                     s = ReadBlock(table->rep_->file, options, handle, &contents);
                     if (s.ok()) {
                         block = new Block(contents);
-                        if (contents.cachable && options.fill_cache) {
+                        if (contents.cachable && options.fillCache_) {
                             cache_handle = block_cache->Insert(key, block, block->size(),
                                                                &DeleteCachedBlock);
                         }
@@ -220,44 +221,51 @@ namespace leveldb {
     }
 
     Iterator *Table::NewIterator(const ReadOptions &options) const {
-        return NewTwoLevelIterator(rep_->index_block->NewIterator(rep_->options.comparator),
+        return NewTwoLevelIterator(rep_->indexBlock_->NewIterator(rep_->options.comparator),
                                    &Table::BlockReader,
                                    const_cast<Table *>(this), options);
     }
 
     Status Table::InternalGet(const ReadOptions &options,
-                              const Slice &k, void *arg,
+                              const Slice &internalKey,
+                              void *arg, // saver
                               void (*handler)(void *arg, const Slice &key, const Slice &value)) {
-        Status s;
-        Iterator *iiter = rep_->index_block->NewIterator(rep_->options.comparator);
-        iiter->Seek(k);
-        if (iiter->Valid()) {
-            Slice handle_value = iiter->value();
-            FilterBlockReader *filter = rep_->filter;
-            BlockHandle handle;
-            if (filter != nullptr && handle.DecodeFrom(&handle_value).ok() &&
-                !filter->KeyMayMatch(handle.offset(), k)) {
+        Status status;
+
+        Iterator *iterator = rep_->indexBlock_->NewIterator(rep_->options.comparator);
+
+        iterator->Seek(internalKey);
+
+        if (iterator->Valid()) {
+            Slice handleValue = iterator->value();
+            FilterBlockReader *filterBlockReader = rep_->filterBlockReader_;
+            BlockHandle blockHandle;
+            if (filterBlockReader != nullptr &&
+                blockHandle.DecodeFrom(&handleValue).ok() &&
+                !filterBlockReader->KeyMayMatch(blockHandle.offset(), internalKey)) {
                 // Not found
             } else {
-                Iterator *block_iter = BlockReader(this, options, iiter->value());
-                block_iter->Seek(k);
+                Iterator *block_iter = BlockReader(this, options, iterator->value());
+                block_iter->Seek(internalKey);
                 if (block_iter->Valid()) {
                     handler(arg, block_iter->key(), block_iter->value());
                 }
-                s = block_iter->status();
+                status = block_iter->status();
                 delete block_iter;
             }
         }
-        if (s.ok()) {
-            s = iiter->status();
+
+        if (status.ok()) {
+            status = iterator->status();
         }
-        delete iiter;
-        return s;
+
+        delete iterator;
+        return status;
     }
 
     uint64_t Table::ApproximateOffsetOf(const Slice &key) const {
         Iterator *index_iter =
-                rep_->index_block->NewIterator(rep_->options.comparator);
+                rep_->indexBlock_->NewIterator(rep_->options.comparator);
         index_iter->Seek(key);
         uint64_t result;
         if (index_iter->Valid()) {

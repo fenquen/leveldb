@@ -167,8 +167,7 @@ namespace leveldb {
         virtual Status GetFileSize(const std::string &fname, uint64_t *file_size) = 0;
 
         // Rename file src to target.
-        virtual Status RenameFile(const std::string &src,
-                                  const std::string &target) = 0;
+        virtual Status RenameFile(const std::string &src, const std::string &target) = 0;
 
         // Lock the specified file.  Used to prevent concurrent access to
         // the same db by multiple processes.  On failure, stores nullptr in

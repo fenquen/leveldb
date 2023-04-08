@@ -17,6 +17,7 @@ namespace leveldb {
         }
 
         cleanup_head_.Run();
+
         for (CleanupNode *node = cleanup_head_.next; node != nullptr;) {
             node->Run();
             CleanupNode *next_node = node->next;

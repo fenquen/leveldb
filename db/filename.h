@@ -39,7 +39,7 @@ namespace leveldb {
     // 后来的leveldb中sst文件改名为了ldb 这里是为了向前兼容
     std::string SSTTableFileName(const std::string &dbname, uint64_t number);
 
-// dbname/MANIFEST-number
+    // dbname/MANIFEST-number
     std::string DescriptorFileName(const std::string &dbname, uint64_t number);
 
 // dbname + "/CURRENT"

@@ -109,8 +109,7 @@ namespace leveldb {
         // leave this parameter alone.
         int blockRestartInterval = 16;
 
-        // Leveldb will write up to this amount of bytes to a file before
-        // switching to a new one.
+        // Leveldb will write up to this amount of bytes to a file before switching to a new one.
         // Most clients should leave this parameter alone.  However if your
         // filesystem is more efficient with larger files, you could
         // consider increasing the value.  The downside will be longer
@@ -153,11 +152,11 @@ namespace leveldb {
 
         // If true, all data read from underlying storage will be
         // verified against corresponding checksums.
-        bool verify_checksums = false;
+        bool verifyChecksums_ = false;
 
         // Should the data read for this iteration be cached in memory?
         // Callers may wish to set this field to false for bulk scans.
-        bool fill_cache = true;
+        bool fillCache_ = true;
 
         // If "snapshot" is non-null, read as of the supplied snapshot
         // (which must belong to the DB that is being read and which must

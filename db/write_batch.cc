@@ -77,8 +77,8 @@ namespace leveldb {
         return DecodeFixed32(writeBatch->rep_.data() + 8);
     }
 
-    void WriteBatchInternal::SetCount(WriteBatch *b, int n) {
-        EncodeFixed32(&b->rep_[8], n);
+    void WriteBatchInternal::SetCount(WriteBatch *writeBatch, int n) {
+        EncodeFixed32(&writeBatch->rep_[8], n);
     }
 
     // 由 writeBatch数据的格式可知 大头的8字节是sequence

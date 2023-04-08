@@ -61,9 +61,9 @@ namespace leveldb {
         // Iteration over the contents of a skip list
         class Iterator {
         public:
-            // Initialize an iterator over the specified list.
+            // Initialize an iterator over the specified skipList.
             // The returned iterator is not valid.
-            explicit Iterator(const SkipList *list);
+            explicit Iterator(const SkipList *skipList);
 
             // true if the iterator is positioned at a valid node.
             bool Valid() const;
@@ -130,7 +130,7 @@ namespace leveldb {
         // Return head if list is empty.
         Node *FindLast() const;
 
-        // Immutable after construction
+        // immutable after construction
         Comparator const comparator;
         Arena *const arena;  // Arena used for allocations of nodes
 
@@ -195,8 +195,8 @@ namespace leveldb {
     }
 
     template<typename Key, class Comparator>
-    inline SkipList<Key, Comparator>::Iterator::Iterator(const SkipList *list) {
-        skipList_ = list;
+    inline SkipList<Key, Comparator>::Iterator::Iterator(const SkipList *skipList) {
+        skipList_ = skipList;
         node_ = nullptr;
     }
 
@@ -268,6 +268,7 @@ namespace leveldb {
         return (node != nullptr) && (comparator(node->key, key) < 0);
     }
 
+    // 得到的是level0上的正好要比key大于等于的
     template<typename Key, class Comparator>
     typename SkipList<Key, Comparator>::Node *
     SkipList<Key, Comparator>::FindGreaterOrEqual(const Key &key, Node **prevNodeArr) const {
@@ -277,23 +278,24 @@ namespace leveldb {
         while (true) {
             Node *nextNode = node->Next(level);
 
-            // node在key前边,说明node还是不够大需要继续next()
+            // 该node的后边1个node还是要比key小,说明node还是不够大需要继续next()
             if (KeyIsAfterNode(key, nextNode)) {
                 // Keep searching in this list
                 node = nextNode;
                 continue;
             }
 
+            // 该node的后边1个node要大于等于key
             // 当前的node是正好要比key小的 是它的prev
             if (prevNodeArr != nullptr) {
                 prevNodeArr[level] = node;
             }
 
             if (level == 0) {
-                return nextNode; // 那个正好比key大的
+                return nextNode; // 那个正好比key大于等于的
             }
 
-            // Switch to nextNode list
+            // switch to nextNode list
             level--;
         }
     }
@@ -340,12 +342,11 @@ namespace leveldb {
     }
 
     template<typename Key, class Comparator>
-    SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena *arena)
-            : comparator(cmp),
-              arena(arena),
-              head(NewNode(0 /* any key will do */, kMaxHeight)),
-              maxHeight(1),
-              random(0xdeadbeef) {
+    SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena *arena): comparator(cmp),
+                                                                       arena(arena),
+                                                                       head(NewNode(0 /* any key will do */, kMaxHeight)),
+                                                                       maxHeight(1),
+                                                                       random(0xdeadbeef) {
         for (int i = 0; i < kMaxHeight; i++) {
             head->SetNext(i, nullptr);
         }
@@ -364,6 +365,7 @@ namespace leveldb {
         assert(node == nullptr || !Equal(key, node->key));
 
         int randomHeight = RandomHeight();
+
         if (randomHeight > GetMaxHeight()) {
             // 填补多的height
             for (int a = GetMaxHeight(); a < randomHeight; a++) {

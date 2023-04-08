@@ -24,9 +24,9 @@ namespace leveldb {
 
     class WriteBatch;
 
-// Abstract handle to particular state of a DB.
-// A Snapshot is an immutable object and can therefore be safely
-// accessed from multiple threads without any external synchronization.
+    // Abstract handle to particular state of a DB.
+    // A Snapshot is an immutable object and can therefore be safely
+    // accessed from multiple threads without any external synchronization.
     class LEVELDB_EXPORT Snapshot {
     protected:
         virtual ~Snapshot();
@@ -76,8 +76,8 @@ namespace leveldb {
 
         // Apply the specified updates to the database.
         // Returns OK on success, non-OK on failure.
-        // Note: consider setting options.sync = true.
-        virtual Status Write(const WriteOptions &options, WriteBatch *updates) = 0;
+        // Note: consider setting writeOptions.sync = true.
+        virtual Status Write(const WriteOptions &writeOptions, WriteBatch *updates) = 0;
 
         // If the database contains an entry for "key" store the
         // corresponding value in *value and return OK.
@@ -86,7 +86,8 @@ namespace leveldb {
         // a status for which Status::IsNotFound() returns true.
         //
         // May return some other Status on an error.
-        virtual Status Get(const ReadOptions &options, const Slice &key,
+        virtual Status Get(const ReadOptions &readOptions,
+                           const Slice &key,
                            std::string *value) = 0;
 
         // Return a heap-allocated iterator over the contents of the database.
@@ -133,8 +134,7 @@ namespace leveldb {
         // sizes will be one-tenth the size of the corresponding user data size.
         //
         // The results may not include the sizes of recently written data.
-        virtual void GetApproximateSizes(const Range *range, int n,
-                                         uint64_t *sizes) = 0;
+        virtual void GetApproximateSizes(const Range *range, int n, uint64_t *sizes) = 0;
 
         // Compact the underlying storage for the key range [*begin,*end].
         // In particular, deleted and overwritten versions are discarded,

@@ -31,6 +31,7 @@ namespace leveldb {
 // of Cache uses a least-recently-used eviction policy.
     LEVELDB_EXPORT Cache *NewLRUCache(size_t capacity);
 
+    // key是fileNumber value是TableAndFile
     class LEVELDB_EXPORT Cache {
     public:
         Cache() = default;
@@ -47,6 +48,7 @@ namespace leveldb {
         struct Handle {
         };
 
+        // key是fileNumber value是TableAndFile
         // Insert a mapping from key->value into the cache and assign it
         // the specified charge against the total cache capacity.
         //

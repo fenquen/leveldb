@@ -91,7 +91,7 @@ namespace leveldb {
         // Check the crc of the type and the block contents
         const char *data = contents.data();  // Pointer to where Read put the data
 
-        if (readOptions.verify_checksums) {
+        if (readOptions.verifyChecksums_) {
             const uint32_t crc = crc32c::Unmask(DecodeFixed32(data + n + 1));
             const uint32_t actual = crc32c::Value(data, n + 1);
             if (actual != crc) {
