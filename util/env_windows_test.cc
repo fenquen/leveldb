@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "gtest/gtest.h"
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "util/env_windows_test_helper.h"
 #include "util/testutil.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
 static const int kMMapLimit = 4;
 
 class EnvWindowsTest : public testing::Test {
- public:
+public:
   static void SetFileLimits(int mmap_limit) {
     EnvWindowsTestHelper::SetReadOnlyMMapLimit(mmap_limit);
   }
 
   EnvWindowsTest() : env_(Env::Default()) {}
 
-  Env* env_;
+  Env *env_;
 };
 
 TEST_F(EnvWindowsTest, TestOpenOnRead) {
@@ -29,7 +29,7 @@ TEST_F(EnvWindowsTest, TestOpenOnRead) {
   ASSERT_LEVELDB_OK(env_->GetTestDirectory(&test_dir));
   std::string test_file = test_dir + "/open_on_read.txt";
 
-  FILE* f = std::fopen(test_file.c_str(), "w");
+  FILE *f = std::fopen(test_file.c_str(), "w");
   ASSERT_TRUE(f != nullptr);
   const char kFileData[] = "abcdefghijklmnopqrstuvwxyz";
   fputs(kFileData, f);
@@ -39,7 +39,7 @@ TEST_F(EnvWindowsTest, TestOpenOnRead) {
   // leveldb::WindowsEnv to switch from mapping the file into memory
   // to basic file reading.
   const int kNumFiles = kMMapLimit + 5;
-  leveldb::RandomAccessFile* files[kNumFiles] = {0};
+  leveldb::RandomAccessFile *files[kNumFiles] = {0};
   for (int i = 0; i < kNumFiles; i++) {
     ASSERT_LEVELDB_OK(env_->NewRandomAccessFile(test_file, &files[i]));
   }
@@ -55,9 +55,9 @@ TEST_F(EnvWindowsTest, TestOpenOnRead) {
   ASSERT_LEVELDB_OK(env_->RemoveFile(test_file));
 }
 
-}  // namespace leveldb
+} // namespace leveldb
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   // All tests currently run with the same read-only file limits.
   leveldb::EnvWindowsTest::SetFileLimits(leveldb::kMMapLimit);
   testing::InitGoogleTest(&argc, argv);

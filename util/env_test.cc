@@ -6,19 +6,19 @@
 
 #include <algorithm>
 
-#include "gtest/gtest.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
 #include "util/mutexlock.h"
 #include "util/testutil.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
 class EnvTest : public testing::Test {
- public:
+public:
   EnvTest() : env_(Env::Default()) {}
 
-  Env* env_;
+  Env *env_;
 };
 
 TEST_F(EnvTest, ReadWrite) {
@@ -28,14 +28,14 @@ TEST_F(EnvTest, ReadWrite) {
   std::string test_dir;
   ASSERT_LEVELDB_OK(env_->GetTestDirectory(&test_dir));
   std::string test_file_name = test_dir + "/open_on_read.txt";
-  WritableFile* writable_file;
+  WritableFile *writable_file;
   ASSERT_LEVELDB_OK(env_->NewWritableFile(test_file_name, &writable_file));
 
   // Fill a file with data generated via a sequence of randomly sized writes.
   static const size_t kDataSize = 10 * 1048576;
   std::string data;
   while (data.size() < kDataSize) {
-    int len = rnd.Skewed(18);  // Up to 2^18 - 1, but typically much smaller
+    int len = rnd.Skewed(18); // Up to 2^18 - 1, but typically much smaller
     std::string r;
     test::RandomString(&rnd, len, &r);
     ASSERT_LEVELDB_OK(writable_file->Append(r));
@@ -49,13 +49,13 @@ TEST_F(EnvTest, ReadWrite) {
   delete writable_file;
 
   // Read all data using a sequence of randomly sized reads.
-  SequentialFile* sequential_file;
+  SequentialFile *sequential_file;
   ASSERT_LEVELDB_OK(env_->NewSequentialFile(test_file_name, &sequential_file));
   std::string read_result;
   std::string scratch;
   while (read_result.size() < data.size()) {
     int len = std::min<int>(rnd.Skewed(18), data.size() - read_result.size());
-    scratch.resize(std::max(len, 1));  // at least 1 so &scratch[0] is legal
+    scratch.resize(std::max(len, 1)); // at least 1 so &scratch[0] is legal
     Slice read;
     ASSERT_LEVELDB_OK(sequential_file->Read(len, &read, &scratch[0]));
     if (len > 0) {
@@ -74,8 +74,8 @@ TEST_F(EnvTest, RunImmediately) {
     port::CondVar cvar{&mu};
     bool called = false;
 
-    static void Run(void* arg) {
-      RunState* state = reinterpret_cast<RunState*>(arg);
+    static void Run(void *arg) {
+      RunState *state = reinterpret_cast<RunState *>(arg);
       MutexLock l(&state->mu);
       ASSERT_EQ(state->called, false);
       state->called = true;
@@ -100,14 +100,14 @@ TEST_F(EnvTest, RunMany) {
   };
 
   struct Callback {
-    RunState* state_;  // Pointer to shared state.
-    const int id_;  // Order# for the execution of this callback.
+    RunState *state_; // Pointer to shared state.
+    const int id_;    // Order# for the execution of this callback.
 
-    Callback(RunState* s, int id) : state_(s), id_(id) {}
+    Callback(RunState *s, int id) : state_(s), id_(id) {}
 
-    static void Run(void* arg) {
-      Callback* callback = reinterpret_cast<Callback*>(arg);
-      RunState* state = callback->state_;
+    static void Run(void *arg) {
+      Callback *callback = reinterpret_cast<Callback *>(arg);
+      RunState *state = callback->state_;
 
       MutexLock l(&state->mu);
       ASSERT_EQ(state->last_id, callback->id_ - 1);
@@ -142,8 +142,8 @@ struct State {
   State(int val, int num_running) : val(val), num_running(num_running) {}
 };
 
-static void ThreadBody(void* arg) {
-  State* s = reinterpret_cast<State*>(arg);
+static void ThreadBody(void *arg) {
+  State *s = reinterpret_cast<State *>(arg);
   s->mu.Lock();
   s->val += 1;
   s->num_running -= 1;
@@ -172,12 +172,12 @@ TEST_F(EnvTest, TestOpenNonExistentFile) {
   std::string non_existent_file = test_dir + "/non_existent_file";
   ASSERT_TRUE(!env_->FileExists(non_existent_file));
 
-  RandomAccessFile* random_access_file;
+  RandomAccessFile *random_access_file;
   Status status =
       env_->NewRandomAccessFile(non_existent_file, &random_access_file);
   ASSERT_TRUE(status.IsNotFound());
 
-  SequentialFile* sequential_file;
+  SequentialFile *sequential_file;
   status = env_->NewSequentialFile(non_existent_file, &sequential_file);
   ASSERT_TRUE(status.IsNotFound());
 }
@@ -188,7 +188,7 @@ TEST_F(EnvTest, ReopenWritableFile) {
   std::string test_file_name = test_dir + "/reopen_writable_file.txt";
   env_->RemoveFile(test_file_name);
 
-  WritableFile* writable_file;
+  WritableFile *writable_file;
   ASSERT_LEVELDB_OK(env_->NewWritableFile(test_file_name, &writable_file));
   std::string data("hello world!");
   ASSERT_LEVELDB_OK(writable_file->Append(data));
@@ -212,7 +212,7 @@ TEST_F(EnvTest, ReopenAppendableFile) {
   std::string test_file_name = test_dir + "/reopen_appendable_file.txt";
   env_->RemoveFile(test_file_name);
 
-  WritableFile* appendable_file;
+  WritableFile *appendable_file;
   ASSERT_LEVELDB_OK(env_->NewAppendableFile(test_file_name, &appendable_file));
   std::string data("hello world!");
   ASSERT_LEVELDB_OK(appendable_file->Append(data));
@@ -230,4 +230,4 @@ TEST_F(EnvTest, ReopenAppendableFile) {
   env_->RemoveFile(test_file_name);
 }
 
-}  // namespace leveldb
+} // namespace leveldb

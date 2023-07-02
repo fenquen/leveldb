@@ -4,31 +4,31 @@
 
 #include "db/dbformat.h"
 
-#include "gtest/gtest.h"
 #include "util/logging.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
-static std::string IKey(const std::string& user_key, uint64_t seq,
+static std::string IKey(const std::string &user_key, uint64_t seq,
                         ValueType vt) {
   std::string encoded;
   AppendInternalKey(&encoded, ParsedInternalKey(user_key, seq, vt));
   return encoded;
 }
 
-static std::string Shorten(const std::string& s, const std::string& l) {
+static std::string Shorten(const std::string &s, const std::string &l) {
   std::string result = s;
   InternalKeyComparator(BytewiseComparator()).FindShortestSeparator(&result, l);
   return result;
 }
 
-static std::string ShortSuccessor(const std::string& s) {
+static std::string ShortSuccessor(const std::string &s) {
   std::string result = s;
   InternalKeyComparator(BytewiseComparator()).FindShortSuccessor(&result);
   return result;
 }
 
-static void TestKey(const std::string& key, uint64_t seq, ValueType vt) {
+static void TestKey(const std::string &key, uint64_t seq, ValueType vt) {
   std::string encoded = IKey(key, seq, vt);
 
   Slice in(encoded);
@@ -43,7 +43,7 @@ static void TestKey(const std::string& key, uint64_t seq, ValueType vt) {
 }
 
 TEST(FormatTest, InternalKey_EncodeDecode) {
-  const char* keys[] = {"", "k", "hello", "longggggggggggggggggggggg"};
+  const char *keys[] = {"", "k", "hello", "longggggggggggggggggggggg"};
   const uint64_t seq[] = {1,
                           2,
                           3,
@@ -125,4 +125,4 @@ TEST(FormatTest, InternalKeyDebugString) {
   ASSERT_EQ("(bad)", invalid_key.DebugString());
 }
 
-}  // namespace leveldb
+} // namespace leveldb

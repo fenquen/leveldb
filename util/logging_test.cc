@@ -7,8 +7,8 @@
 #include <limits>
 #include <string>
 
-#include "gtest/gtest.h"
 #include "leveldb/slice.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
@@ -38,7 +38,7 @@ TEST(Logging, NumberToString) {
 }
 
 void ConsumeDecimalNumberRoundtripTest(uint64_t number,
-                                       const std::string& padding = "") {
+                                       const std::string &padding = "") {
   std::string decimal_number = NumberToString(number);
   std::string input_string = decimal_number + padding;
   Slice input(input_string);
@@ -90,7 +90,7 @@ TEST(Logging, ConsumeDecimalNumberRoundtripWithPadding) {
   }
 }
 
-void ConsumeDecimalNumberOverflowTest(const std::string& input_string) {
+void ConsumeDecimalNumberOverflowTest(const std::string &input_string) {
   Slice input(input_string);
   Slice output = input;
   uint64_t result;
@@ -117,7 +117,7 @@ TEST(Logging, ConsumeDecimalNumberOverflow) {
   ConsumeDecimalNumberOverflowTest("99999999999999999999");
 }
 
-void ConsumeDecimalNumberNoDigitsTest(const std::string& input_string) {
+void ConsumeDecimalNumberNoDigitsTest(const std::string &input_string) {
   Slice input(input_string);
   Slice output = input;
   uint64_t result;
@@ -137,4 +137,4 @@ TEST(Logging, ConsumeDecimalNumberNoDigits) {
   ConsumeDecimalNumberNoDigitsTest(std::string("\377123", 4));
 }
 
-}  // namespace leveldb
+} // namespace leveldb

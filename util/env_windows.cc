@@ -6,7 +6,7 @@
 // use STL.
 #ifndef NOMINMAX
 #define NOMINMAX
-#endif  // ifndef NOMINMAX
+#endif // ifndef NOMINMAX
 #include <windows.h>
 
 #include <algorithm>
@@ -40,20 +40,20 @@ namespace {
 constexpr const size_t kWritableFileBufferSize = 65536;
 
 // Up to 1000 mmaps for 64-bit binaries; none for 32-bit.
-constexpr int kDefaultMmapLimit = (sizeof(void*) >= 8) ? 1000 : 0;
+constexpr int kDefaultMmapLimit = (sizeof(void *) >= 8) ? 1000 : 0;
 
 // Can be set by by EnvWindowsTestHelper::SetReadOnlyMMapLimit().
 int g_mmap_limit = kDefaultMmapLimit;
 
 std::string GetWindowsErrorMessage(DWORD error_code) {
   std::string message;
-  char* error_text = nullptr;
+  char *error_text = nullptr;
   // Use MBCS version of FormatMessage to match return value.
   size_t error_text_size = ::FormatMessageA(
       FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER |
           FORMAT_MESSAGE_IGNORE_INSERTS,
       nullptr, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-      reinterpret_cast<char*>(&error_text), 0, nullptr);
+      reinterpret_cast<char *>(&error_text), 0, nullptr);
   if (!error_text) {
     return message;
   }
@@ -62,23 +62,24 @@ std::string GetWindowsErrorMessage(DWORD error_code) {
   return message;
 }
 
-Status WindowsError(const std::string& context, DWORD error_code) {
+Status WindowsError(const std::string &context, DWORD error_code) {
   if (error_code == ERROR_FILE_NOT_FOUND || error_code == ERROR_PATH_NOT_FOUND)
     return Status::NotFound(context, GetWindowsErrorMessage(error_code));
   return Status::IOError(context, GetWindowsErrorMessage(error_code));
 }
 
 class ScopedHandle {
- public:
+public:
   ScopedHandle(HANDLE handle) : handle_(handle) {}
-  ScopedHandle(const ScopedHandle&) = delete;
-  ScopedHandle(ScopedHandle&& other) noexcept : handle_(other.Release()) {}
+  ScopedHandle(const ScopedHandle &) = delete;
+  ScopedHandle(ScopedHandle &&other) noexcept : handle_(other.Release()) {}
   ~ScopedHandle() { Close(); }
 
-  ScopedHandle& operator=(const ScopedHandle&) = delete;
+  ScopedHandle &operator=(const ScopedHandle &) = delete;
 
-  ScopedHandle& operator=(ScopedHandle&& rhs) noexcept {
-    if (this != &rhs) handle_ = rhs.Release();
+  ScopedHandle &operator=(ScopedHandle &&rhs) noexcept {
+    if (this != &rhs)
+      handle_ = rhs.Release();
     return *this;
   }
 
@@ -103,7 +104,7 @@ class ScopedHandle {
     return h;
   }
 
- private:
+private:
   HANDLE handle_;
 };
 
@@ -112,19 +113,19 @@ class ScopedHandle {
 // so that we do not run out of file descriptors or virtual memory, or run into
 // kernel performance problems for very large databases.
 class Limiter {
- public:
+public:
   // Limit maximum number of resources to |max_acquires|.
   Limiter(int max_acquires)
       :
 #if !defined(NDEBUG)
         max_acquires_(max_acquires),
-#endif  // !defined(NDEBUG)
+#endif // !defined(NDEBUG)
         acquires_allowed_(max_acquires) {
     assert(max_acquires >= 0);
   }
 
-  Limiter(const Limiter&) = delete;
-  Limiter operator=(const Limiter&) = delete;
+  Limiter(const Limiter &) = delete;
+  Limiter operator=(const Limiter &) = delete;
 
   // If another resource is available, acquire it and return true.
   // Else return false.
@@ -132,7 +133,8 @@ class Limiter {
     int old_acquires_allowed =
         acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
 
-    if (old_acquires_allowed > 0) return true;
+    if (old_acquires_allowed > 0)
+      return true;
 
     acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
     return false;
@@ -150,11 +152,11 @@ class Limiter {
     assert(old_acquires_allowed < max_acquires_);
   }
 
- private:
+private:
 #if !defined(NDEBUG)
   // Catches an excessive number of Release() calls.
   const int max_acquires_;
-#endif  // !defined(NDEBUG)
+#endif // !defined(NDEBUG)
 
   // The number of available resources.
   //
@@ -164,12 +166,12 @@ class Limiter {
 };
 
 class WindowsSequentialFile : public SequentialFile {
- public:
+public:
   WindowsSequentialFile(std::string filename, ScopedHandle handle)
       : handle_(std::move(handle)), filename_(std::move(filename)) {}
   ~WindowsSequentialFile() override {}
 
-  Status Read(size_t n, Slice* result, char* scratch) override {
+  Status Read(size_t n, Slice *result, char *scratch) override {
     DWORD bytes_read;
     // DWORD is 32-bit, but size_t could technically be larger. However leveldb
     // files are limited to leveldb::Options::max_file_size which is clamped to
@@ -193,20 +195,20 @@ class WindowsSequentialFile : public SequentialFile {
     return Status::OK();
   }
 
- private:
+private:
   const ScopedHandle handle_;
   const std::string filename_;
 };
 
 class WindowsRandomAccessFile : public RandomAccessFile {
- public:
+public:
   WindowsRandomAccessFile(std::string filename, ScopedHandle handle)
       : handle_(std::move(handle)), filename_(std::move(filename)) {}
 
   ~WindowsRandomAccessFile() override = default;
 
-  Status Read(uint64_t offset, size_t n, Slice* result,
-              char* scratch) const override {
+  Status Read(uint64_t offset, size_t n, Slice *result,
+              char *scratch) const override {
     DWORD bytes_read = 0;
     OVERLAPPED overlapped = {0};
 
@@ -225,19 +227,17 @@ class WindowsRandomAccessFile : public RandomAccessFile {
     return Status::OK();
   }
 
- private:
+private:
   const ScopedHandle handle_;
   const std::string filename_;
 };
 
 class WindowsMmapReadableFile : public RandomAccessFile {
- public:
+public:
   // base[0,length-1] contains the mmapped contents of the file.
-  WindowsMmapReadableFile(std::string filename, char* mmap_base, size_t length,
-                          Limiter* mmap_limiter)
-      : mmap_base_(mmap_base),
-        length_(length),
-        mmap_limiter_(mmap_limiter),
+  WindowsMmapReadableFile(std::string filename, char *mmap_base, size_t length,
+                          Limiter *mmap_limiter)
+      : mmap_base_(mmap_base), length_(length), mmap_limiter_(mmap_limiter),
         filename_(std::move(filename)) {}
 
   ~WindowsMmapReadableFile() override {
@@ -245,8 +245,8 @@ class WindowsMmapReadableFile : public RandomAccessFile {
     mmap_limiter_->Release();
   }
 
-  Status Read(uint64_t offset, size_t n, Slice* result,
-              char* scratch) const override {
+  Status Read(uint64_t offset, size_t n, Slice *result,
+              char *scratch) const override {
     if (offset + n > length_) {
       *result = Slice();
       return WindowsError(filename_, ERROR_INVALID_PARAMETER);
@@ -256,23 +256,23 @@ class WindowsMmapReadableFile : public RandomAccessFile {
     return Status::OK();
   }
 
- private:
-  char* const mmap_base_;
+private:
+  char *const mmap_base_;
   const size_t length_;
-  Limiter* const mmap_limiter_;
+  Limiter *const mmap_limiter_;
   const std::string filename_;
 };
 
 class WindowsWritableFile : public WritableFile {
- public:
+public:
   WindowsWritableFile(std::string filename, ScopedHandle handle)
       : pos_(0), handle_(std::move(handle)), filename_(std::move(filename)) {}
 
   ~WindowsWritableFile() override = default;
 
-  Status Append(const Slice& data) override {
+  Status Append(const Slice &data) override {
     size_t write_size = data.size();
-    const char* write_data = data.data();
+    const char *write_data = data.data();
 
     // Fit as much as possible into buffer.
     size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
@@ -325,14 +325,14 @@ class WindowsWritableFile : public WritableFile {
     return Status::OK();
   }
 
- private:
+private:
   Status FlushBuffer() {
     Status status = WriteUnbuffered(buf_, pos_);
     pos_ = 0;
     return status;
   }
 
-  Status WriteUnbuffered(const char* data, size_t size) {
+  Status WriteUnbuffered(const char *data, size_t size) {
     DWORD bytes_written;
     if (!::WriteFile(handle_.get(), data, static_cast<DWORD>(size),
                      &bytes_written, nullptr)) {
@@ -368,20 +368,20 @@ bool LockOrUnlock(HANDLE handle, bool lock) {
 }
 
 class WindowsFileLock : public FileLock {
- public:
+public:
   WindowsFileLock(ScopedHandle handle, std::string filename)
       : handle_(std::move(handle)), filename_(std::move(filename)) {}
 
-  const ScopedHandle& handle() const { return handle_; }
-  const std::string& filename() const { return filename_; }
+  const ScopedHandle &handle() const { return handle_; }
+  const std::string &filename() const { return filename_; }
 
- private:
+private:
   const ScopedHandle handle_;
   const std::string filename_;
 };
 
 class WindowsEnv : public Env {
- public:
+public:
   WindowsEnv();
   ~WindowsEnv() override {
     static const char msg[] =
@@ -390,8 +390,8 @@ class WindowsEnv : public Env {
     std::abort();
   }
 
-  Status NewSequentialFile(const std::string& filename,
-                           SequentialFile** result) override {
+  Status NewSequentialFile(const std::string &filename,
+                           SequentialFile **result) override {
     *result = nullptr;
     DWORD desired_access = GENERIC_READ;
     DWORD share_mode = FILE_SHARE_READ;
@@ -407,8 +407,8 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  Status NewRandomAccessFile(const std::string& filename,
-                             RandomAccessFile** result) override {
+  Status NewRandomAccessFile(const std::string &filename,
+                             RandomAccessFile **result) override {
     *result = nullptr;
     DWORD desired_access = GENERIC_READ;
     DWORD share_mode = FILE_SHARE_READ;
@@ -439,13 +439,13 @@ class WindowsEnv : public Env {
                              /*dwMaximumSizeLow=*/0,
                              /*lpName=*/nullptr);
     if (mapping.is_valid()) {
-      void* mmap_base = ::MapViewOfFile(mapping.get(), FILE_MAP_READ,
+      void *mmap_base = ::MapViewOfFile(mapping.get(), FILE_MAP_READ,
                                         /*dwFileOffsetHigh=*/0,
                                         /*dwFileOffsetLow=*/0,
                                         /*dwNumberOfBytesToMap=*/0);
       if (mmap_base) {
         *result = new WindowsMmapReadableFile(
-            filename, reinterpret_cast<char*>(mmap_base),
+            filename, reinterpret_cast<char *>(mmap_base),
             static_cast<size_t>(file_size.QuadPart), &mmap_limiter_);
         return Status::OK();
       }
@@ -454,10 +454,10 @@ class WindowsEnv : public Env {
     return WindowsError(filename, ::GetLastError());
   }
 
-  Status NewWritableFile(const std::string& filename,
-                         WritableFile** result) override {
+  Status NewWritableFile(const std::string &filename,
+                         WritableFile **result) override {
     DWORD desired_access = GENERIC_WRITE;
-    DWORD share_mode = 0;  // Exclusive access.
+    DWORD share_mode = 0; // Exclusive access.
     ScopedHandle handle = ::CreateFileA(
         filename.c_str(), desired_access, share_mode,
         /*lpSecurityAttributes=*/nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
@@ -471,10 +471,10 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  Status NewAppendableFile(const std::string& filename,
-                           WritableFile** result) override {
+  Status NewAppendableFile(const std::string &filename,
+                           WritableFile **result) override {
     DWORD desired_access = FILE_APPEND_DATA;
-    DWORD share_mode = 0;  // Exclusive access.
+    DWORD share_mode = 0; // Exclusive access.
     ScopedHandle handle = ::CreateFileA(
         filename.c_str(), desired_access, share_mode,
         /*lpSecurityAttributes=*/nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL,
@@ -488,12 +488,12 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  bool FileExists(const std::string& filename) override {
+  bool FileExists(const std::string &filename) override {
     return GetFileAttributesA(filename.c_str()) != INVALID_FILE_ATTRIBUTES;
   }
 
-  Status GetChildren(const std::string& directory_path,
-                     std::vector<std::string>* result) override {
+  Status GetChildren(const std::string &directory_path,
+                     std::vector<std::string> *result) override {
     const std::string find_pattern = directory_path + "\\*";
     WIN32_FIND_DATAA find_data;
     HANDLE dir_handle = ::FindFirstFileA(find_pattern.c_str(), &find_data);
@@ -521,28 +521,28 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  Status RemoveFile(const std::string& filename) override {
+  Status RemoveFile(const std::string &filename) override {
     if (!::DeleteFileA(filename.c_str())) {
       return WindowsError(filename, ::GetLastError());
     }
     return Status::OK();
   }
 
-  Status CreateDir(const std::string& dirname) override {
+  Status CreateDir(const std::string &dirname) override {
     if (!::CreateDirectoryA(dirname.c_str(), nullptr)) {
       return WindowsError(dirname, ::GetLastError());
     }
     return Status::OK();
   }
 
-  Status RemoveDir(const std::string& dirname) override {
+  Status RemoveDir(const std::string &dirname) override {
     if (!::RemoveDirectoryA(dirname.c_str())) {
       return WindowsError(dirname, ::GetLastError());
     }
     return Status::OK();
   }
 
-  Status GetFileSize(const std::string& filename, uint64_t* size) override {
+  Status GetFileSize(const std::string &filename, uint64_t *size) override {
     WIN32_FILE_ATTRIBUTE_DATA file_attributes;
     if (!::GetFileAttributesExA(filename.c_str(), GetFileExInfoStandard,
                                 &file_attributes)) {
@@ -555,7 +555,7 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  Status RenameFile(const std::string& from, const std::string& to) override {
+  Status RenameFile(const std::string &from, const std::string &to) override {
     // Try a simple move first. It will only succeed when |to| doesn't already
     // exist.
     if (::MoveFileA(from.c_str(), to.c_str())) {
@@ -584,7 +584,7 @@ class WindowsEnv : public Env {
     }
   }
 
-  Status LockFile(const std::string& filename, FileLock** lock) override {
+  Status LockFile(const std::string &filename, FileLock **lock) override {
     *lock = nullptr;
     Status result;
     ScopedHandle handle = ::CreateFileA(
@@ -601,9 +601,9 @@ class WindowsEnv : public Env {
     return result;
   }
 
-  Status UnlockFile(FileLock* lock) override {
-    WindowsFileLock* windows_file_lock =
-        reinterpret_cast<WindowsFileLock*>(lock);
+  Status UnlockFile(FileLock *lock) override {
+    WindowsFileLock *windows_file_lock =
+        reinterpret_cast<WindowsFileLock *>(lock);
     if (!LockOrUnlock(windows_file_lock->handle().get(), false)) {
       return WindowsError("unlock " + windows_file_lock->filename(),
                           ::GetLastError());
@@ -612,17 +612,17 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  void Schedule(void (*background_work_function)(void* background_work_arg),
-                void* background_work_arg) override;
+  void Schedule(void (*background_work_function)(void *background_work_arg),
+                void *background_work_arg) override;
 
-  void StartThread(void (*thread_main)(void* thread_main_arg),
-                   void* thread_main_arg) override {
+  void StartThread(void (*thread_main)(void *thread_main_arg),
+                   void *thread_main_arg) override {
     std::thread new_thread(thread_main, thread_main_arg);
     new_thread.detach();
   }
 
-  Status GetTestDirectory(std::string* result) override {
-    const char* env = getenv("TEST_TMPDIR");
+  Status GetTestDirectory(std::string *result) override {
+    const char *env = getenv("TEST_TMPDIR");
     if (env && env[0] != '\0') {
       *result = env;
       return Status::OK();
@@ -641,8 +641,8 @@ class WindowsEnv : public Env {
     return Status::OK();
   }
 
-  Status NewLogger(const std::string& filename, Logger** result) override {
-    std::FILE* fp = std::fopen(filename.c_str(), "wN");
+  Status NewLogger(const std::string &filename, Logger **result) override {
+    std::FILE *fp = std::fopen(filename.c_str(), "wN");
     if (fp == nullptr) {
       *result = nullptr;
       return WindowsError(filename, ::GetLastError());
@@ -669,10 +669,10 @@ class WindowsEnv : public Env {
     std::this_thread::sleep_for(std::chrono::microseconds(micros));
   }
 
- private:
+private:
   void BackgroundThreadMain();
 
-  static void BackgroundThreadEntryPoint(WindowsEnv* env) {
+  static void BackgroundThreadEntryPoint(WindowsEnv *env) {
     env->BackgroundThreadMain();
   }
 
@@ -683,21 +683,21 @@ class WindowsEnv : public Env {
   //
   // This structure is thread-safe because it is immutable.
   struct BackgroundWorkItem {
-    explicit BackgroundWorkItem(void (*function)(void* arg), void* arg)
+    explicit BackgroundWorkItem(void (*function)(void *arg), void *arg)
         : function(function), arg(arg) {}
 
-    void (*const function)(void*);
-    void* const arg;
+    void (*const function)(void *);
+    void *const arg;
   };
 
   port::Mutex background_work_mutex_;
   port::CondVar background_work_cv_ GUARDED_BY(background_work_mutex_);
   bool started_background_thread_ GUARDED_BY(background_work_mutex_);
 
-  std::queue<BackgroundWorkItem> background_work_queue_
-      GUARDED_BY(background_work_mutex_);
+  std::queue<BackgroundWorkItem>
+      background_work_queue_ GUARDED_BY(background_work_mutex_);
 
-  Limiter mmap_limiter_;  // Thread-safe.
+  Limiter mmap_limiter_; // Thread-safe.
 };
 
 // Return the maximum number of concurrent mmaps.
@@ -705,12 +705,11 @@ int MaxMmaps() { return g_mmap_limit; }
 
 WindowsEnv::WindowsEnv()
     : background_work_cv_(&background_work_mutex_),
-      started_background_thread_(false),
-      mmap_limiter_(MaxMmaps()) {}
+      started_background_thread_(false), mmap_limiter_(MaxMmaps()) {}
 
 void WindowsEnv::Schedule(
-    void (*background_work_function)(void* background_work_arg),
-    void* background_work_arg) {
+    void (*background_work_function)(void *background_work_arg),
+    void *background_work_arg) {
   background_work_mutex_.Lock();
 
   // Start the background thread, if we haven't done so already.
@@ -740,7 +739,7 @@ void WindowsEnv::BackgroundThreadMain() {
 
     assert(!background_work_queue_.empty());
     auto background_work_function = background_work_queue_.front().function;
-    void* background_work_arg = background_work_queue_.front().arg;
+    void *background_work_arg = background_work_queue_.front().arg;
     background_work_queue_.pop();
 
     background_work_mutex_.Unlock();
@@ -760,13 +759,12 @@ void WindowsEnv::BackgroundThreadMain() {
 //     static PlatformSingletonEnv default_env;
 //     return default_env.env();
 //   }
-template <typename EnvType>
-class SingletonEnv {
- public:
+template <typename EnvType> class SingletonEnv {
+public:
   SingletonEnv() {
 #if !defined(NDEBUG)
     env_initialized_.store(true, std::memory_order_relaxed);
-#endif  // !defined(NDEBUG)
+#endif // !defined(NDEBUG)
     static_assert(sizeof(env_storage_) >= sizeof(EnvType),
                   "env_storage_ will not fit the Env");
     static_assert(alignof(decltype(env_storage_)) >= alignof(EnvType),
@@ -775,42 +773,42 @@ class SingletonEnv {
   }
   ~SingletonEnv() = default;
 
-  SingletonEnv(const SingletonEnv&) = delete;
-  SingletonEnv& operator=(const SingletonEnv&) = delete;
+  SingletonEnv(const SingletonEnv &) = delete;
+  SingletonEnv &operator=(const SingletonEnv &) = delete;
 
-  Env* env() { return reinterpret_cast<Env*>(&env_storage_); }
+  Env *env() { return reinterpret_cast<Env *>(&env_storage_); }
 
   static void AssertEnvNotInitialized() {
 #if !defined(NDEBUG)
     assert(!env_initialized_.load(std::memory_order_relaxed));
-#endif  // !defined(NDEBUG)
+#endif // !defined(NDEBUG)
   }
 
- private:
+private:
   typename std::aligned_storage<sizeof(EnvType), alignof(EnvType)>::type
       env_storage_;
 #if !defined(NDEBUG)
   static std::atomic<bool> env_initialized_;
-#endif  // !defined(NDEBUG)
+#endif // !defined(NDEBUG)
 };
 
 #if !defined(NDEBUG)
 template <typename EnvType>
 std::atomic<bool> SingletonEnv<EnvType>::env_initialized_;
-#endif  // !defined(NDEBUG)
+#endif // !defined(NDEBUG)
 
 using WindowsDefaultEnv = SingletonEnv<WindowsEnv>;
 
-}  // namespace
+} // namespace
 
 void EnvWindowsTestHelper::SetReadOnlyMMapLimit(int limit) {
   WindowsDefaultEnv::AssertEnvNotInitialized();
   g_mmap_limit = limit;
 }
 
-Env* Env::Default() {
+Env *Env::Default() {
   static WindowsDefaultEnv env_container;
   return env_container.env();
 }
 
-}  // namespace leveldb
+} // namespace leveldb

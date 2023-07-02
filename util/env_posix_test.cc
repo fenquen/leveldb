@@ -13,11 +13,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "util/env_posix_test_helper.h"
 #include "util/testutil.h"
+#include "gtest/gtest.h"
 
 #if HAVE_O_CLOEXEC
 
@@ -35,7 +35,7 @@ constexpr int kTextCloseOnExecHelperFoundOpenFdCode = 63;
 // std::string does not return a mutable pointer to its buffer until C++17.
 //
 // The vector stores the string pointed to by argv[0], plus the trailing null.
-std::vector<char>* GetArgvZero() {
+std::vector<char> *GetArgvZero() {
   static std::vector<char> program_name;
   return &program_name;
 }
@@ -56,7 +56,7 @@ static const char kTestCloseOnExecSwitch[] = "--test-close-on-exec-helper";
 //
 // When main() delegates to this function, the process probes whether a given
 // file descriptor is open, and communicates the result via its exit code.
-int TestCloseOnExecHelperMain(char* pid_arg) {
+int TestCloseOnExecHelperMain(char *pid_arg) {
   int fd = std::atoi(pid_arg);
   // When given the same file descriptor twice, dup2() returns -1 if the
   // file descriptor is closed, or the given file descriptor if it is open.
@@ -76,7 +76,7 @@ int TestCloseOnExecHelperMain(char* pid_arg) {
 // File descriptors are small non-negative integers.
 //
 // Returns void so the implementation can use ASSERT_EQ.
-void GetMaxFileDescriptor(int* result_fd) {
+void GetMaxFileDescriptor(int *result_fd) {
   // Get the maximum file descriptor number.
   ::rlimit fd_rlimit;
   ASSERT_EQ(0, ::getrlimit(RLIMIT_NOFILE, &fd_rlimit));
@@ -86,7 +86,7 @@ void GetMaxFileDescriptor(int* result_fd) {
 // Iterates through all possible FDs and returns the currently open ones.
 //
 // Returns void so the implementation can use ASSERT_EQ.
-void GetOpenFileDescriptors(std::unordered_set<int>* open_fds) {
+void GetOpenFileDescriptors(std::unordered_set<int> *open_fds) {
   int max_fd = 0;
   GetMaxFileDescriptor(&max_fd);
 
@@ -111,7 +111,7 @@ void GetOpenFileDescriptors(std::unordered_set<int>* open_fds) {
 //
 // Returns void so the implementation can use ASSERT_EQ.
 void GetNewlyOpenedFileDescriptor(
-    const std::unordered_set<int>& baseline_open_fds, int* result_fd) {
+    const std::unordered_set<int> &baseline_open_fds, int *result_fd) {
   std::unordered_set<int> open_fds;
   GetOpenFileDescriptors(&open_fds);
   for (int fd : baseline_open_fds) {
@@ -126,7 +126,7 @@ void GetNewlyOpenedFileDescriptor(
 
 // Check that a fork()+exec()-ed child process does not have an extra open FD.
 void CheckCloseOnExecDoesNotLeakFDs(
-    const std::unordered_set<int>& baseline_open_fds) {
+    const std::unordered_set<int> &baseline_open_fds) {
   // Prepare the argument list for the child process.
   // execv() wants mutable buffers.
   char switch_buffer[sizeof(kTestCloseOnExecSwitch)];
@@ -141,7 +141,7 @@ void CheckCloseOnExecDoesNotLeakFDs(
 
   // The helper process is launched with the command below.
   //      env_posix_tests --test-close-on-exec-helper 3
-  char* child_argv[] = {GetArgvZero()->data(), switch_buffer, fd_buffer.data(),
+  char *child_argv[] = {GetArgvZero()->data(), switch_buffer, fd_buffer.data(),
                         nullptr};
 
   constexpr int kForkInChildProcessReturnValue = 0;
@@ -160,9 +160,9 @@ void CheckCloseOnExecDoesNotLeakFDs(
       << "The helper process encountered an error";
 }
 
-}  // namespace
+} // namespace
 
-#endif  // HAVE_O_CLOEXEC
+#endif // HAVE_O_CLOEXEC
 
 namespace leveldb {
 
@@ -170,7 +170,7 @@ static const int kReadOnlyFileLimit = 4;
 static const int kMMapLimit = 4;
 
 class EnvPosixTest : public testing::Test {
- public:
+public:
   static void SetFileLimits(int read_only_file_limit, int mmap_limit) {
     EnvPosixTestHelper::SetReadOnlyFDLimit(read_only_file_limit);
     EnvPosixTestHelper::SetReadOnlyMMapLimit(mmap_limit);
@@ -178,7 +178,7 @@ class EnvPosixTest : public testing::Test {
 
   EnvPosixTest() : env_(Env::Default()) {}
 
-  Env* env_;
+  Env *env_;
 };
 
 TEST_F(EnvPosixTest, TestOpenOnRead) {
@@ -187,7 +187,7 @@ TEST_F(EnvPosixTest, TestOpenOnRead) {
   ASSERT_LEVELDB_OK(env_->GetTestDirectory(&test_dir));
   std::string test_file = test_dir + "/open_on_read.txt";
 
-  FILE* f = std::fopen(test_file.c_str(), "we");
+  FILE *f = std::fopen(test_file.c_str(), "we");
   ASSERT_TRUE(f != nullptr);
   const char kFileData[] = "abcdefghijklmnopqrstuvwxyz";
   fputs(kFileData, f);
@@ -196,7 +196,7 @@ TEST_F(EnvPosixTest, TestOpenOnRead) {
   // Open test file some number above the sum of the two limits to force
   // open-on-read behavior of POSIX Env leveldb::RandomAccessFile.
   const int kNumFiles = kReadOnlyFileLimit + kMMapLimit + 5;
-  leveldb::RandomAccessFile* files[kNumFiles] = {0};
+  leveldb::RandomAccessFile *files[kNumFiles] = {0};
   for (int i = 0; i < kNumFiles; i++) {
     ASSERT_LEVELDB_OK(env_->NewRandomAccessFile(test_file, &files[i]));
   }
@@ -223,7 +223,7 @@ TEST_F(EnvPosixTest, TestCloseOnExecSequentialFile) {
   std::string file_path = test_dir + "/close_on_exec_sequential.txt";
   ASSERT_LEVELDB_OK(WriteStringToFile(env_, "0123456789", file_path));
 
-  leveldb::SequentialFile* file = nullptr;
+  leveldb::SequentialFile *file = nullptr;
   ASSERT_LEVELDB_OK(env_->NewSequentialFile(file_path, &file));
   CheckCloseOnExecDoesNotLeakFDs(open_fds);
   delete file;
@@ -243,12 +243,12 @@ TEST_F(EnvPosixTest, TestCloseOnExecRandomAccessFile) {
   // Exhaust the RandomAccessFile mmap limit. This way, the test
   // RandomAccessFile instance below is backed by a file descriptor, not by an
   // mmap region.
-  leveldb::RandomAccessFile* mmapped_files[kMMapLimit];
+  leveldb::RandomAccessFile *mmapped_files[kMMapLimit];
   for (int i = 0; i < kMMapLimit; i++) {
     ASSERT_LEVELDB_OK(env_->NewRandomAccessFile(file_path, &mmapped_files[i]));
   }
 
-  leveldb::RandomAccessFile* file = nullptr;
+  leveldb::RandomAccessFile *file = nullptr;
   ASSERT_LEVELDB_OK(env_->NewRandomAccessFile(file_path, &file));
   CheckCloseOnExecDoesNotLeakFDs(open_fds);
   delete file;
@@ -268,7 +268,7 @@ TEST_F(EnvPosixTest, TestCloseOnExecWritableFile) {
   std::string file_path = test_dir + "/close_on_exec_writable.txt";
   ASSERT_LEVELDB_OK(WriteStringToFile(env_, "0123456789", file_path));
 
-  leveldb::WritableFile* file = nullptr;
+  leveldb::WritableFile *file = nullptr;
   ASSERT_LEVELDB_OK(env_->NewWritableFile(file_path, &file));
   CheckCloseOnExecDoesNotLeakFDs(open_fds);
   delete file;
@@ -285,7 +285,7 @@ TEST_F(EnvPosixTest, TestCloseOnExecAppendableFile) {
   std::string file_path = test_dir + "/close_on_exec_appendable.txt";
   ASSERT_LEVELDB_OK(WriteStringToFile(env_, "0123456789", file_path));
 
-  leveldb::WritableFile* file = nullptr;
+  leveldb::WritableFile *file = nullptr;
   ASSERT_LEVELDB_OK(env_->NewAppendableFile(file_path, &file));
   CheckCloseOnExecDoesNotLeakFDs(open_fds);
   delete file;
@@ -302,7 +302,7 @@ TEST_F(EnvPosixTest, TestCloseOnExecLockFile) {
   std::string file_path = test_dir + "/close_on_exec_lock.txt";
   ASSERT_LEVELDB_OK(WriteStringToFile(env_, "0123456789", file_path));
 
-  leveldb::FileLock* lock = nullptr;
+  leveldb::FileLock *lock = nullptr;
   ASSERT_LEVELDB_OK(env_->LockFile(file_path, &lock));
   CheckCloseOnExecDoesNotLeakFDs(open_fds);
   ASSERT_LEVELDB_OK(env_->UnlockFile(lock));
@@ -319,7 +319,7 @@ TEST_F(EnvPosixTest, TestCloseOnExecLogger) {
   std::string file_path = test_dir + "/close_on_exec_logger.txt";
   ASSERT_LEVELDB_OK(WriteStringToFile(env_, "0123456789", file_path));
 
-  leveldb::Logger* file = nullptr;
+  leveldb::Logger *file = nullptr;
   ASSERT_LEVELDB_OK(env_->NewLogger(file_path, &file));
   CheckCloseOnExecDoesNotLeakFDs(open_fds);
   delete file;
@@ -327,11 +327,11 @@ TEST_F(EnvPosixTest, TestCloseOnExecLogger) {
   ASSERT_LEVELDB_OK(env_->RemoveFile(file_path));
 }
 
-#endif  // HAVE_O_CLOEXEC
+#endif // HAVE_O_CLOEXEC
 
-}  // namespace leveldb
+} // namespace leveldb
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 #if HAVE_O_CLOEXEC
   // Check if we're invoked as a helper program, or as the test suite.
   for (int i = 1; i < argc; ++i) {
@@ -342,7 +342,7 @@ int main(int argc, char** argv) {
 
   // Save argv[0] early, because googletest may modify argv.
   GetArgvZero()->assign(argv[0], argv[0] + std::strlen(argv[0]) + 1);
-#endif  // HAVE_O_CLOEXEC
+#endif // HAVE_O_CLOEXEC
 
   // All tests currently run with the same read-only file limits.
   leveldb::EnvPosixTest::SetFileLimits(leveldb::kReadOnlyFileLimit,

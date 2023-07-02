@@ -2,41 +2,41 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "gtest/gtest.h"
 #include "db/memtable.h"
 #include "db/write_batch_internal.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "util/logging.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
-static std::string PrintContents(WriteBatch* b) {
+static std::string PrintContents(WriteBatch *b) {
   InternalKeyComparator cmp(BytewiseComparator());
-  MemTable* mem = new MemTable(cmp);
+  MemTable *mem = new MemTable(cmp);
   mem->Ref();
   std::string state;
   Status s = WriteBatchInternal::InsertInto(b, mem);
   int count = 0;
-  Iterator* iter = mem->NewIterator();
+  Iterator *iter = mem->NewIterator();
   for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
     ParsedInternalKey ikey;
     EXPECT_TRUE(ParseInternalKey(iter->key(), &ikey));
     switch (ikey.type) {
-      case kTypeValue:
-        state.append("Put(");
-        state.append(ikey.user_key.ToString());
-        state.append(", ");
-        state.append(iter->value().ToString());
-        state.append(")");
-        count++;
-        break;
-      case kTypeDeletion:
-        state.append("Delete(");
-        state.append(ikey.user_key.ToString());
-        state.append(")");
-        count++;
-        break;
+    case kTypeValue:
+      state.append("Put(");
+      state.append(ikey.user_key.ToString());
+      state.append(", ");
+      state.append(iter->value().ToString());
+      state.append(")");
+      count++;
+      break;
+    case kTypeDeletion:
+      state.append("Delete(");
+      state.append(ikey.user_key.ToString());
+      state.append(")");
+      count++;
+      break;
     }
     state.append("@");
     state.append(NumberToString(ikey.sequence));
@@ -65,11 +65,10 @@ TEST(WriteBatchTest, Multiple) {
   WriteBatchInternal::SetSequence(&batch, 100);
   ASSERT_EQ(100, WriteBatchInternal::Sequence(&batch));
   ASSERT_EQ(3, WriteBatchInternal::Count(&batch));
-  ASSERT_EQ(
-      "Put(baz, boo)@102"
-      "Delete(box)@101"
-      "Put(foo, bar)@100",
-      PrintContents(&batch));
+  ASSERT_EQ("Put(baz, boo)@102"
+            "Delete(box)@101"
+            "Put(foo, bar)@100",
+            PrintContents(&batch));
 }
 
 TEST(WriteBatchTest, Corruption) {
@@ -80,10 +79,9 @@ TEST(WriteBatchTest, Corruption) {
   Slice contents = WriteBatchInternal::Contents(&batch);
   WriteBatchInternal::SetContents(&batch,
                                   Slice(contents.data(), contents.size() - 1));
-  ASSERT_EQ(
-      "Put(foo, bar)@200"
-      "ParseError()",
-      PrintContents(&batch));
+  ASSERT_EQ("Put(foo, bar)@200"
+            "ParseError()",
+            PrintContents(&batch));
 }
 
 TEST(WriteBatchTest, Append) {
@@ -98,18 +96,16 @@ TEST(WriteBatchTest, Append) {
   b2.Clear();
   b2.Put("b", "vb");
   b1.Append(b2);
-  ASSERT_EQ(
-      "Put(a, va)@200"
-      "Put(b, vb)@201",
-      PrintContents(&b1));
+  ASSERT_EQ("Put(a, va)@200"
+            "Put(b, vb)@201",
+            PrintContents(&b1));
   b2.Delete("foo");
   b1.Append(b2);
-  ASSERT_EQ(
-      "Put(a, va)@200"
-      "Put(b, vb)@202"
-      "Put(b, vb)@201"
-      "Delete(foo)@203",
-      PrintContents(&b1));
+  ASSERT_EQ("Put(a, va)@200"
+            "Put(b, vb)@202"
+            "Put(b, vb)@201"
+            "Delete(foo)@203",
+            PrintContents(&b1));
 }
 
 TEST(WriteBatchTest, ApproximateSize) {
@@ -129,4 +125,4 @@ TEST(WriteBatchTest, ApproximateSize) {
   ASSERT_LT(two_keys_size, post_delete_size);
 }
 
-}  // namespace leveldb
+} // namespace leveldb

@@ -16,7 +16,7 @@ TEST(Coding, Fixed32) {
     PutFixed32(&s, v);
   }
 
-  const char* p = s.data();
+  const char *p = s.data();
   for (uint32_t v = 0; v < 100000; v++) {
     uint32_t actual = DecodeFixed32(p);
     ASSERT_EQ(v, actual);
@@ -33,7 +33,7 @@ TEST(Coding, Fixed64) {
     PutFixed64(&s, v + 1);
   }
 
-  const char* p = s.data();
+  const char *p = s.data();
   for (int power = 0; power <= 63; power++) {
     uint64_t v = static_cast<uint64_t>(1) << power;
     uint64_t actual;
@@ -81,12 +81,12 @@ TEST(Coding, Varint32) {
     PutVarint32(&s, v);
   }
 
-  const char* p = s.data();
-  const char* limit = p + s.size();
+  const char *p = s.data();
+  const char *limit = p + s.size();
   for (uint32_t i = 0; i < (32 * 32); i++) {
     uint32_t expected = (i / 32) << (i % 32);
     uint32_t actual;
-    const char* start = p;
+    const char *start = p;
     p = GetVarint32Ptr(p, limit, &actual);
     ASSERT_TRUE(p != nullptr);
     ASSERT_EQ(expected, actual);
@@ -116,12 +116,12 @@ TEST(Coding, Varint64) {
     PutVarint64(&s, values[i]);
   }
 
-  const char* p = s.data();
-  const char* limit = p + s.size();
+  const char *p = s.data();
+  const char *limit = p + s.size();
   for (size_t i = 0; i < values.size(); i++) {
     ASSERT_TRUE(p < limit);
     uint64_t actual;
-    const char* start = p;
+    const char *start = p;
     p = GetVarint64Ptr(p, limit, &actual);
     ASSERT_TRUE(p != nullptr);
     ASSERT_EQ(values[i], actual);
@@ -190,4 +190,4 @@ TEST(Coding, Strings) {
   ASSERT_EQ("", input.ToString());
 }
 
-}  // namespace leveldb
+} // namespace leveldb

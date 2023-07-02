@@ -4,14 +4,14 @@
 
 #include "db/version_set.h"
 
-#include "gtest/gtest.h"
 #include "util/logging.h"
 #include "util/testutil.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
 class FindFileTest : public testing::Test {
- public:
+public:
   FindFileTest() : disjoint_sorted_files_(true) {}
 
   ~FindFileTest() {
@@ -20,23 +20,23 @@ class FindFileTest : public testing::Test {
     }
   }
 
-  void Add(const char* smallest, const char* largest,
+  void Add(const char *smallest, const char *largest,
            SequenceNumber smallest_seq = 100,
            SequenceNumber largest_seq = 100) {
-    FileMetaData* f = new FileMetaData;
+    FileMetaData *f = new FileMetaData;
     f->number = files_.size() + 1;
     f->smallest = InternalKey(smallest, smallest_seq, kTypeValue);
     f->largest = InternalKey(largest, largest_seq, kTypeValue);
     files_.push_back(f);
   }
 
-  int Find(const char* key) {
+  int Find(const char *key) {
     InternalKey target(key, 100, kTypeValue);
     InternalKeyComparator cmp(BytewiseComparator());
     return FindFile(cmp, files_, target.Encode());
   }
 
-  bool Overlaps(const char* smallest, const char* largest) {
+  bool Overlaps(const char *smallest, const char *largest) {
     InternalKeyComparator cmp(BytewiseComparator());
     Slice s(smallest != nullptr ? smallest : "");
     Slice l(largest != nullptr ? largest : "");
@@ -47,8 +47,8 @@ class FindFileTest : public testing::Test {
 
   bool disjoint_sorted_files_;
 
- private:
-  std::vector<FileMetaData*> files_;
+private:
+  std::vector<FileMetaData *> files_;
 };
 
 TEST_F(FindFileTest, Empty) {
@@ -174,15 +174,15 @@ TEST_F(FindFileTest, OverlappingFiles) {
   ASSERT_TRUE(Overlaps("600", "700"));
 }
 
-void AddBoundaryInputs(const InternalKeyComparator& icmp,
-                       const std::vector<FileMetaData*>& level_files,
-                       std::vector<FileMetaData*>* compaction_files);
+void AddBoundaryInputs(const InternalKeyComparator &icmp,
+                       const std::vector<FileMetaData *> &level_files,
+                       std::vector<FileMetaData *> *compaction_files);
 
 class AddBoundaryInputsTest : public testing::Test {
- public:
-  std::vector<FileMetaData*> level_files_;
-  std::vector<FileMetaData*> compaction_files_;
-  std::vector<FileMetaData*> all_files_;
+public:
+  std::vector<FileMetaData *> level_files_;
+  std::vector<FileMetaData *> compaction_files_;
+  std::vector<FileMetaData *> all_files_;
   InternalKeyComparator icmp_;
 
   AddBoundaryInputsTest() : icmp_(BytewiseComparator()) {}
@@ -194,9 +194,9 @@ class AddBoundaryInputsTest : public testing::Test {
     all_files_.clear();
   }
 
-  FileMetaData* CreateFileMetaData(uint64_t number, InternalKey smallest,
+  FileMetaData *CreateFileMetaData(uint64_t number, InternalKey smallest,
                                    InternalKey largest) {
-    FileMetaData* f = new FileMetaData();
+    FileMetaData *f = new FileMetaData();
     f->number = number;
     f->smallest = smallest;
     f->largest = largest;
@@ -212,7 +212,7 @@ TEST_F(AddBoundaryInputsTest, TestEmptyFileSets) {
 }
 
 TEST_F(AddBoundaryInputsTest, TestEmptyLevelFiles) {
-  FileMetaData* f1 =
+  FileMetaData *f1 =
       CreateFileMetaData(1, InternalKey("100", 2, kTypeValue),
                          InternalKey(InternalKey("100", 1, kTypeValue)));
   compaction_files_.push_back(f1);
@@ -224,7 +224,7 @@ TEST_F(AddBoundaryInputsTest, TestEmptyLevelFiles) {
 }
 
 TEST_F(AddBoundaryInputsTest, TestEmptyCompactionFiles) {
-  FileMetaData* f1 =
+  FileMetaData *f1 =
       CreateFileMetaData(1, InternalKey("100", 2, kTypeValue),
                          InternalKey(InternalKey("100", 1, kTypeValue)));
   level_files_.push_back(f1);
@@ -236,13 +236,13 @@ TEST_F(AddBoundaryInputsTest, TestEmptyCompactionFiles) {
 }
 
 TEST_F(AddBoundaryInputsTest, TestNoBoundaryFiles) {
-  FileMetaData* f1 =
+  FileMetaData *f1 =
       CreateFileMetaData(1, InternalKey("100", 2, kTypeValue),
                          InternalKey(InternalKey("100", 1, kTypeValue)));
-  FileMetaData* f2 =
+  FileMetaData *f2 =
       CreateFileMetaData(1, InternalKey("200", 2, kTypeValue),
                          InternalKey(InternalKey("200", 1, kTypeValue)));
-  FileMetaData* f3 =
+  FileMetaData *f3 =
       CreateFileMetaData(1, InternalKey("300", 2, kTypeValue),
                          InternalKey(InternalKey("300", 1, kTypeValue)));
 
@@ -257,13 +257,13 @@ TEST_F(AddBoundaryInputsTest, TestNoBoundaryFiles) {
 }
 
 TEST_F(AddBoundaryInputsTest, TestOneBoundaryFiles) {
-  FileMetaData* f1 =
+  FileMetaData *f1 =
       CreateFileMetaData(1, InternalKey("100", 3, kTypeValue),
                          InternalKey(InternalKey("100", 2, kTypeValue)));
-  FileMetaData* f2 =
+  FileMetaData *f2 =
       CreateFileMetaData(1, InternalKey("100", 1, kTypeValue),
                          InternalKey(InternalKey("200", 3, kTypeValue)));
-  FileMetaData* f3 =
+  FileMetaData *f3 =
       CreateFileMetaData(1, InternalKey("300", 2, kTypeValue),
                          InternalKey(InternalKey("300", 1, kTypeValue)));
 
@@ -279,13 +279,13 @@ TEST_F(AddBoundaryInputsTest, TestOneBoundaryFiles) {
 }
 
 TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {
-  FileMetaData* f1 =
+  FileMetaData *f1 =
       CreateFileMetaData(1, InternalKey("100", 6, kTypeValue),
                          InternalKey(InternalKey("100", 5, kTypeValue)));
-  FileMetaData* f2 =
+  FileMetaData *f2 =
       CreateFileMetaData(1, InternalKey("100", 2, kTypeValue),
                          InternalKey(InternalKey("300", 1, kTypeValue)));
-  FileMetaData* f3 =
+  FileMetaData *f3 =
       CreateFileMetaData(1, InternalKey("100", 4, kTypeValue),
                          InternalKey(InternalKey("100", 3, kTypeValue)));
 
@@ -302,16 +302,16 @@ TEST_F(AddBoundaryInputsTest, TestTwoBoundaryFiles) {
 }
 
 TEST_F(AddBoundaryInputsTest, TestDisjoinFilePointers) {
-  FileMetaData* f1 =
+  FileMetaData *f1 =
       CreateFileMetaData(1, InternalKey("100", 6, kTypeValue),
                          InternalKey(InternalKey("100", 5, kTypeValue)));
-  FileMetaData* f2 =
+  FileMetaData *f2 =
       CreateFileMetaData(1, InternalKey("100", 6, kTypeValue),
                          InternalKey(InternalKey("100", 5, kTypeValue)));
-  FileMetaData* f3 =
+  FileMetaData *f3 =
       CreateFileMetaData(1, InternalKey("100", 2, kTypeValue),
                          InternalKey(InternalKey("300", 1, kTypeValue)));
-  FileMetaData* f4 =
+  FileMetaData *f4 =
       CreateFileMetaData(1, InternalKey("100", 4, kTypeValue),
                          InternalKey(InternalKey("100", 3, kTypeValue)));
 
@@ -328,4 +328,4 @@ TEST_F(AddBoundaryInputsTest, TestDisjoinFilePointers) {
   ASSERT_EQ(f3, compaction_files_[2]);
 }
 
-}  // namespace leveldb
+} // namespace leveldb

@@ -19,21 +19,21 @@ struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
 
   int refs;
-  int allowed_seeks;  // Seeks allowed until compaction
+  int allowed_seeks; // Seeks allowed until compaction
   uint64_t number;
-  uint64_t file_size;    // File size in bytes
-  InternalKey smallest;  // Smallest internal key served by table
-  InternalKey largest;   // Largest internal key served by table
+  uint64_t file_size;   // File size in bytes
+  InternalKey smallest; // Smallest internal key served by table
+  InternalKey largest;  // Largest internal key served by table
 };
 
 class VersionEdit {
- public:
+public:
   VersionEdit() { Clear(); }
   ~VersionEdit() = default;
 
   void Clear();
 
-  void SetComparatorName(const Slice& name) {
+  void SetComparatorName(const Slice &name) {
     has_comparator_ = true;
     comparator_ = name.ToString();
   }
@@ -53,7 +53,7 @@ class VersionEdit {
     has_last_sequence_ = true;
     last_sequence_ = seq;
   }
-  void SetCompactPointer(int level, const InternalKey& key) {
+  void SetCompactPointer(int level, const InternalKey &key) {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
 
@@ -61,7 +61,7 @@ class VersionEdit {
   // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
   void AddFile(int level, uint64_t file, uint64_t file_size,
-               const InternalKey& smallest, const InternalKey& largest) {
+               const InternalKey &smallest, const InternalKey &largest) {
     FileMetaData f;
     f.number = file;
     f.file_size = file_size;
@@ -75,12 +75,12 @@ class VersionEdit {
     deleted_files_.insert(std::make_pair(level, file));
   }
 
-  void EncodeTo(std::string* dst) const;
-  Status DecodeFrom(const Slice& src);
+  void EncodeTo(std::string *dst) const;
+  Status DecodeFrom(const Slice &src);
 
   std::string DebugString() const;
 
- private:
+private:
   friend class VersionSet;
 
   typedef std::set<std::pair<int, uint64_t>> DeletedFileSet;
@@ -101,6 +101,6 @@ class VersionEdit {
   std::vector<std::pair<int, FileMetaData>> new_files_;
 };
 
-}  // namespace leveldb
+} // namespace leveldb
 
-#endif  // STORAGE_LEVELDB_DB_VERSION_EDIT_H_
+#endif // STORAGE_LEVELDB_DB_VERSION_EDIT_H_

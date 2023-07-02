@@ -1,6 +1,6 @@
 leveldb Log format
 ==================
-The log file contents are a sequence of 32KB blocks.  The only exception is that
+The log file contents are a sequence of 32KB blocks. The only exception is that
 the tail of the file may contain a partial block.
 
 Each block consists of a sequence of records:
@@ -21,7 +21,7 @@ length record is added, the writer must emit a FIRST record (which contains zero
 bytes of user data) to fill up the trailing seven bytes of the block and then
 emit all of the user data in subsequent blocks.
 
-More types may be added in the future.  Some Readers may skip record types they
+More types may be added in the future. Some Readers may skip record types they
 do not understand, others may report that some data was skipped.
 
     FULL == 1
@@ -32,7 +32,7 @@ do not understand, others may report that some data was skipped.
 The FULL record contains the contents of an entire user record.
 
 FIRST, MIDDLE, LAST are types used for user records that have been split into
-multiple fragments (typically because of block boundaries).  FIRST is the type
+multiple fragments (typically because of block boundaries). FIRST is the type
 of the first fragment of a user record, LAST is the type of the last fragment of
 a user record, and MIDDLE is the type of all interior fragments of a user
 record.
@@ -47,7 +47,7 @@ Example: consider a sequence of user records:
 
 **B** will be split into three fragments: first fragment occupies the rest of
 the first block, second fragment occupies the entirety of the second block, and
-the third fragment occupies a prefix of the third block.  This will leave six
+the third fragment occupies a prefix of the third block. This will leave six
 bytes free in the third block, which will be left empty as the trailer.
 
 **C** will be stored as a FULL record in the fourth block.
@@ -57,7 +57,7 @@ bytes free in the third block, which will be left empty as the trailer.
 ## Some benefits over the recordio format:
 
 1. We do not need any heuristics for resyncing - just go to next block boundary
-   and scan.  If there is a corruption, skip to the next block.  As a
+   and scan. If there is a corruption, skip to the next block. As a
    side-benefit, we do not get confused when part of the contents of one log
    file are embedded as a record inside another log file.
 
@@ -68,8 +68,8 @@ bytes free in the third block, which will be left empty as the trailer.
 
 ## Some downsides compared to recordio format:
 
-1. No packing of tiny records.  This could be fixed by adding a new record type,
+1. No packing of tiny records. This could be fixed by adding a new record type,
    so it is a shortcoming of the current implementation, not necessarily the
    format.
 
-2. No compression.  Again, this could be fixed by adding new record types.
+2. No compression. Again, this could be fixed by adding new record types.

@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "gtest/gtest.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
 #include "leveldb/env.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
 #include "util/random.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 namespace log {
 
 // Construct a string of the specified length made out of the supplied
 // partial string.
-static std::string BigString(const std::string& partial_string, size_t n) {
+static std::string BigString(const std::string &partial_string, size_t n) {
   std::string result;
   while (result.size() < n) {
     result.append(partial_string);
@@ -32,15 +32,14 @@ static std::string NumberString(int n) {
 }
 
 // Return a skewed potentially long string
-static std::string RandomSkewedString(int i, Random* rnd) {
+static std::string RandomSkewedString(int i, Random *rnd) {
   return BigString(NumberString(i), rnd->Skewed(17));
 }
 
 class LogTest : public testing::Test {
- public:
+public:
   LogTest()
-      : reading_(false),
-        writer_(new Writer(&dest_)),
+      : reading_(false), writer_(new Writer(&dest_)),
         reader_(new Reader(&source_, &report_, true /*checksum*/,
                            0 /*initial_offset*/)) {}
 
@@ -54,7 +53,7 @@ class LogTest : public testing::Test {
     writer_ = new Writer(&dest_, dest_.contents_.size());
   }
 
-  void Write(const std::string& msg) {
+  void Write(const std::string &msg) {
     ASSERT_TRUE(!reading_) << "Write() after starting to read";
     writer_->AddRecord(Slice(msg));
   }
@@ -101,7 +100,7 @@ class LogTest : public testing::Test {
   std::string ReportMessage() const { return report_.message_; }
 
   // Returns OK iff recorded error message contains "msg"
-  std::string MatchError(const std::string& msg) const {
+  std::string MatchError(const std::string &msg) const {
     if (report_.message_.find(msg) == std::string::npos) {
       return report_.message_;
     } else {
@@ -126,7 +125,7 @@ class LogTest : public testing::Test {
     WriteInitialOffsetLog();
     reading_ = true;
     source_.contents_ = Slice(dest_.contents_);
-    Reader* offset_reader = new Reader(&source_, &report_, true /*checksum*/,
+    Reader *offset_reader = new Reader(&source_, &report_, true /*checksum*/,
                                        WrittenBytes() + offset_past_end);
     Slice record;
     std::string scratch;
@@ -139,7 +138,7 @@ class LogTest : public testing::Test {
     WriteInitialOffsetLog();
     reading_ = true;
     source_.contents_ = Slice(dest_.contents_);
-    Reader* offset_reader =
+    Reader *offset_reader =
         new Reader(&source_, &report_, true /*checksum*/, initial_offset);
 
     // Read all records from expected_record_offset through the last one.
@@ -158,13 +157,13 @@ class LogTest : public testing::Test {
     delete offset_reader;
   }
 
- private:
+private:
   class StringDest : public WritableFile {
-   public:
+  public:
     Status Close() override { return Status::OK(); }
     Status Flush() override { return Status::OK(); }
     Status Sync() override { return Status::OK(); }
-    Status Append(const Slice& slice) override {
+    Status Append(const Slice &slice) override {
       contents_.append(slice.data(), slice.size());
       return Status::OK();
     }
@@ -173,10 +172,10 @@ class LogTest : public testing::Test {
   };
 
   class StringSource : public SequentialFile {
-   public:
+  public:
     StringSource() : force_error_(false), returned_partial_(false) {}
 
-    Status Read(size_t n, Slice* result, char* scratch) override {
+    Status Read(size_t n, Slice *result, char *scratch) override {
       EXPECT_TRUE(!returned_partial_) << "must not Read() after eof/error";
 
       if (force_error_) {
@@ -211,9 +210,9 @@ class LogTest : public testing::Test {
   };
 
   class ReportCollector : public Reader::Reporter {
-   public:
+  public:
     ReportCollector() : dropped_bytes_(0) {}
-    void Corruption(size_t bytes, const Status& status) override {
+    void Corruption(size_t bytes, const Status &status) override {
       dropped_bytes_ += bytes;
       message_.append(status.ToString());
     }
@@ -231,17 +230,17 @@ class LogTest : public testing::Test {
   StringSource source_;
   ReportCollector report_;
   bool reading_;
-  Writer* writer_;
-  Reader* reader_;
+  Writer *writer_;
+  Reader *reader_;
 };
 
 size_t LogTest::initial_offset_record_sizes_[] = {
-    10000,  // Two sizable records in first block
+    10000, // Two sizable records in first block
     10000,
-    2 * log::kBlockSize - 1000,  // Span three blocks
+    2 * log::kBlockSize - 1000, // Span three blocks
     1,
-    13716,                          // Consume all but two bytes of block 3.
-    log::kBlockSize - kHeaderSize,  // Consume the entirety of block 4.
+    13716,                         // Consume all but two bytes of block 3.
+    log::kBlockSize - kHeaderSize, // Consume the entirety of block 4.
 };
 
 uint64_t LogTest::initial_offset_last_record_offsets_[] = {
@@ -270,7 +269,7 @@ TEST_F(LogTest, ReadWrite) {
   ASSERT_EQ("", Read());
   ASSERT_EQ("xxxx", Read());
   ASSERT_EQ("EOF", Read());
-  ASSERT_EQ("EOF", Read());  // Make sure reads at eof work
+  ASSERT_EQ("EOF", Read()); // Make sure reads at eof work
 }
 
 TEST_F(LogTest, ManyBlocks) {
@@ -383,7 +382,7 @@ TEST_F(LogTest, BadRecordType) {
 
 TEST_F(LogTest, TruncatedTrailingRecordIsIgnored) {
   Write("foo");
-  ShrinkSize(4);  // Drop all payload as well as a header byte
+  ShrinkSize(4); // Drop all payload as well as a header byte
   ASSERT_EQ("EOF", Read());
   // Truncated last record is ignored, not treated as an error.
   ASSERT_EQ(0, DroppedBytes());
@@ -541,9 +540,9 @@ TEST_F(LogTest, ReadFourthLastBlock) {
 }
 
 TEST_F(LogTest, ReadFourthStart) {
-  CheckInitialOffsetRecord(
-      2 * (kHeaderSize + 1000) + (2 * log::kBlockSize - 1000) + 3 * kHeaderSize,
-      3);
+  CheckInitialOffsetRecord(2 * (kHeaderSize + 1000) +
+                               (2 * log::kBlockSize - 1000) + 3 * kHeaderSize,
+                           3);
 }
 
 TEST_F(LogTest, ReadInitialOffsetIntoBlockPadding) {
@@ -554,5 +553,5 @@ TEST_F(LogTest, ReadEnd) { CheckOffsetPastEndReturnsNoRecords(0); }
 
 TEST_F(LogTest, ReadPastEnd) { CheckOffsetPastEndReturnsNoRecords(5); }
 
-}  // namespace log
-}  // namespace leveldb
+} // namespace log
+} // namespace leveldb

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "gtest/gtest.h"
 #include "db/db_impl.h"
 #include "db/filename.h"
 #include "db/version_set.h"
@@ -12,11 +11,12 @@
 #include "leveldb/write_batch.h"
 #include "util/logging.h"
 #include "util/testutil.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
 class RecoveryTest : public testing::Test {
- public:
+public:
   RecoveryTest() : env_(Env::Default()), db_(nullptr) {
     dbname_ = testing::TempDir() + "recovery_test";
     DestroyDB(dbname_, Options());
@@ -28,11 +28,11 @@ class RecoveryTest : public testing::Test {
     DestroyDB(dbname_, Options());
   }
 
-  DBImpl* dbfull() const { return reinterpret_cast<DBImpl*>(db_); }
-  Env* env() const { return env_; }
+  DBImpl *dbfull() const { return reinterpret_cast<DBImpl *>(db_); }
+  Env *env() const { return env_; }
 
   bool CanAppend() {
-    WritableFile* tmp;
+    WritableFile *tmp;
     Status s = env_->NewAppendableFile(CurrentFileName(dbname_), &tmp);
     delete tmp;
     if (s.IsNotSupportedError()) {
@@ -47,13 +47,13 @@ class RecoveryTest : public testing::Test {
     db_ = nullptr;
   }
 
-  Status OpenWithStatus(Options* options = nullptr) {
+  Status OpenWithStatus(Options *options = nullptr) {
     Close();
     Options opts;
     if (options != nullptr) {
       opts = *options;
     } else {
-      opts.reuse_logs = true;  // TODO(sanjay): test both ways
+      opts.reuse_logs = true; // TODO(sanjay): test both ways
       opts.create_if_missing = true;
     }
     if (opts.env == nullptr) {
@@ -62,16 +62,16 @@ class RecoveryTest : public testing::Test {
     return DB::Open(opts, dbname_, &db_);
   }
 
-  void Open(Options* options = nullptr) {
+  void Open(Options *options = nullptr) {
     ASSERT_LEVELDB_OK(OpenWithStatus(options));
     ASSERT_EQ(1, NumLogs());
   }
 
-  Status Put(const std::string& k, const std::string& v) {
+  Status Put(const std::string &k, const std::string &v) {
     return db_->Put(WriteOptions(), k, v);
   }
 
-  std::string Get(const std::string& k, const Snapshot* snapshot = nullptr) {
+  std::string Get(const std::string &k, const Snapshot *snapshot = nullptr) {
     std::string result;
     Status s = db_->Get(ReadOptions(), k, &result);
     if (s.IsNotFound()) {
@@ -130,7 +130,7 @@ class RecoveryTest : public testing::Test {
 
   int NumTables() { return GetFiles(kTableFile).size(); }
 
-  uint64_t FileSize(const std::string& fname) {
+  uint64_t FileSize(const std::string &fname) {
     uint64_t result;
     EXPECT_LEVELDB_OK(env_->GetFileSize(fname, &result)) << fname;
     return result;
@@ -141,7 +141,7 @@ class RecoveryTest : public testing::Test {
   // Directly construct a log file that sets key to val.
   void MakeLogFile(uint64_t lognum, SequenceNumber seq, Slice key, Slice val) {
     std::string fname = LogFileName(dbname_, lognum);
-    WritableFile* file;
+    WritableFile *file;
     ASSERT_LEVELDB_OK(env_->NewWritableFile(fname, &file));
     log::Writer writer(file);
     WriteBatch batch;
@@ -152,10 +152,10 @@ class RecoveryTest : public testing::Test {
     delete file;
   }
 
- private:
+private:
   std::string dbname_;
-  Env* env_;
-  DB* db_;
+  Env *env_;
+  DB *db_;
 };
 
 TEST_F(RecoveryTest, ManifestReused) {
@@ -188,7 +188,7 @@ TEST_F(RecoveryTest, LargeManifestCompacted) {
   // Pad with zeroes to make manifest file very big.
   {
     uint64_t len = FileSize(old_manifest);
-    WritableFile* file;
+    WritableFile *file;
     ASSERT_LEVELDB_OK(env()->NewAppendableFile(old_manifest, &file));
     std::string zeroes(3 * 1048576 - static_cast<size_t>(len), 0);
     ASSERT_LEVELDB_OK(file->Append(zeroes));
@@ -331,4 +331,4 @@ TEST_F(RecoveryTest, ManifestMissing) {
   ASSERT_TRUE(status.IsCorruption());
 }
 
-}  // namespace leveldb
+} // namespace leveldb

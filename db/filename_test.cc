@@ -4,10 +4,10 @@
 
 #include "db/filename.h"
 
-#include "gtest/gtest.h"
 #include "db/dbformat.h"
 #include "port/port.h"
 #include "util/logging.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
@@ -18,7 +18,7 @@ TEST(FileNameTest, Parse) {
 
   // Successful parses
   static struct {
-    const char* fname;
+    const char *fname;
     uint64_t number;
     FileType type;
   } cases[] = {
@@ -42,7 +42,7 @@ TEST(FileNameTest, Parse) {
   }
 
   // Errors
-  static const char* errors[] = {"",
+  static const char *errors[] = {"",
                                  "foo",
                                  "foo-dx-100.log",
                                  ".log",
@@ -124,4 +124,4 @@ TEST(FileNameTest, Construction) {
   ASSERT_EQ(kInfoLogFile, type);
 }
 
-}  // namespace leveldb
+} // namespace leveldb

@@ -4,7 +4,7 @@ leveldb
 _Jeff Dean, Sanjay Ghemawat_
 
 The leveldb library provides a persistent key value store. Keys and values are
-arbitrary byte arrays.  The keys are ordered within the key value store
+arbitrary byte arrays. The keys are ordered within the key value store
 according to a user-specified comparator function.
 
 ## Opening A Database
@@ -246,7 +246,7 @@ storage for slice will disappear.
 
 The preceding examples used the default ordering function for key, which orders
 bytes lexicographically. You can however supply a custom comparator when opening
-a database.  For example, suppose each database key consists of two numbers and
+a database. For example, suppose each database key consists of two numbers and
 we should sort by the first number, breaking ties by the second number. First,
 define a proper subclass of `leveldb::Comparator` that expresses these rules:
 
@@ -313,7 +313,7 @@ Performance can be tuned by changing the default values of the types defined in
 
 leveldb groups adjacent keys together into the same block and such a block is
 the unit of transfer to and from persistent storage. The default block size is
-approximately 4096 uncompressed bytes.  Applications that mostly do bulk scans
+approximately 4096 uncompressed bytes. Applications that mostly do bulk scans
 over the contents of the database may wish to increase this size. Applications
 that do a lot of point reads of small values may wish to switch to a smaller
 block size if performance measurements indicate an improvement. There isn't much
@@ -407,7 +407,7 @@ delete options.filter_policy;
 ```
 
 The preceding code associates a Bloom filter based filtering policy with the
-database.  Bloom filter based filtering relies on keeping some number of bits of
+database. Bloom filter based filtering relies on keeping some number of bits of
 data in memory per key (in this case 10 bits per key since that is the argument
 we passed to `NewBloomFilterPolicy`). This filter will reduce the number of
 unnecessary disk reads needed for Get() calls by a factor of approximately
@@ -456,7 +456,7 @@ verified:
 
 `ReadOptions::verify_checksums` may be set to true to force checksum
 verification of all data that is read from the file system on behalf of a
-particular read.  By default, no such verification is done.
+particular read. By default, no such verification is done.
 
 `Options::paranoid_checks` may be set to true before opening a database to make
 the database implementation raise an error as soon as it detects an internal
@@ -509,10 +509,10 @@ Status s = leveldb::DB::Open(options, ...);
 
 leveldb may be ported to a new platform by providing platform specific
 implementations of the types/methods/functions exported by
-`leveldb/port/port.h`.  See `leveldb/port/port_example.h` for more details.
+`leveldb/port/port.h`. See `leveldb/port/port_example.h` for more details.
 
 In addition, the new platform may need a new default `leveldb::Env`
-implementation.  See `leveldb/util/env_posix.h` for an example.
+implementation. See `leveldb/util/env_posix.h` for an example.
 
 ## Other Information
 

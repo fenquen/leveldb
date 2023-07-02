@@ -2,23 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "gtest/gtest.h"
 #include "leveldb/filter_policy.h"
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/testutil.h"
+#include "gtest/gtest.h"
 
 namespace leveldb {
 
 static const int kVerbose = 1;
 
-static Slice Key(int i, char* buffer) {
+static Slice Key(int i, char *buffer) {
   EncodeFixed32(buffer, i);
   return Slice(buffer, sizeof(uint32_t));
 }
 
 class BloomTest : public testing::Test {
- public:
+public:
   BloomTest() : policy_(NewBloomFilterPolicy(10)) {}
 
   ~BloomTest() { delete policy_; }
@@ -28,7 +28,7 @@ class BloomTest : public testing::Test {
     filter_.clear();
   }
 
-  void Add(const Slice& s) { keys_.push_back(s.ToString()); }
+  void Add(const Slice &s) { keys_.push_back(s.ToString()); }
 
   void Build() {
     std::vector<Slice> key_slices;
@@ -39,7 +39,8 @@ class BloomTest : public testing::Test {
     policy_->CreateFilter(&key_slices[0], static_cast<int>(key_slices.size()),
                           &filter_);
     keys_.clear();
-    if (kVerbose >= 2) DumpFilter();
+    if (kVerbose >= 2)
+      DumpFilter();
   }
 
   size_t FilterSize() const { return filter_.size(); }
@@ -55,7 +56,7 @@ class BloomTest : public testing::Test {
     std::fprintf(stderr, ")\n");
   }
 
-  bool Matches(const Slice& s) {
+  bool Matches(const Slice &s) {
     if (!keys_.empty()) {
       Build();
     }
@@ -73,8 +74,8 @@ class BloomTest : public testing::Test {
     return result / 10000.0;
   }
 
- private:
-  const FilterPolicy* policy_;
+private:
+  const FilterPolicy *policy_;
   std::string filter_;
   std::vector<std::string> keys_;
 };
@@ -136,9 +137,9 @@ TEST_F(BloomTest, VaryingLengths) {
                    "False positives: %5.2f%% @ length = %6d ; bytes = %6d\n",
                    rate * 100.0, length, static_cast<int>(FilterSize()));
     }
-    ASSERT_LE(rate, 0.02);  // Must not be over 2%
+    ASSERT_LE(rate, 0.02); // Must not be over 2%
     if (rate > 0.0125)
-      mediocre_filters++;  // Allowed, but not too often
+      mediocre_filters++; // Allowed, but not too often
     else
       good_filters++;
   }
@@ -151,4 +152,4 @@ TEST_F(BloomTest, VaryingLengths) {
 
 // Different bits-per-byte
 
-}  // namespace leveldb
+} // namespace leveldb

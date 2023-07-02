@@ -14,13 +14,13 @@
 
 namespace leveldb {
 
-void AppendNumberTo(std::string* str, uint64_t num) {
+void AppendNumberTo(std::string *str, uint64_t num) {
   char buf[30];
   std::snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(num));
   str->append(buf);
 }
 
-void AppendEscapedStringTo(std::string* str, const Slice& value) {
+void AppendEscapedStringTo(std::string *str, const Slice &value) {
   for (size_t i = 0; i < value.size(); i++) {
     char c = value[i];
     if (c >= ' ' && c <= '~') {
@@ -40,13 +40,13 @@ std::string NumberToString(uint64_t num) {
   return r;
 }
 
-std::string EscapeString(const Slice& value) {
+std::string EscapeString(const Slice &value) {
   std::string r;
   AppendEscapedStringTo(&r, value);
   return r;
 }
 
-bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
+bool ConsumeDecimalNumber(Slice *in, uint64_t *val) {
   // Constants that will be optimized away.
   constexpr const uint64_t kMaxUint64 = std::numeric_limits<uint64_t>::max();
   constexpr const char kLastDigitOfMaxUint64 =
@@ -55,13 +55,14 @@ bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
   uint64_t value = 0;
 
   // reinterpret_cast-ing from char* to uint8_t* to avoid signedness.
-  const uint8_t* start = reinterpret_cast<const uint8_t*>(in->data());
+  const uint8_t *start = reinterpret_cast<const uint8_t *>(in->data());
 
-  const uint8_t* end = start + in->size();
-  const uint8_t* current = start;
+  const uint8_t *end = start + in->size();
+  const uint8_t *current = start;
   for (; current != end; ++current) {
     const uint8_t ch = *current;
-    if (ch < '0' || ch > '9') break;
+    if (ch < '0' || ch > '9')
+      break;
 
     // Overflow check.
     // kMaxUint64 / 10 is also constant and will be optimized away.
@@ -79,4 +80,4 @@ bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
   return digits_consumed != 0;
 }
 
-}  // namespace leveldb
+} // namespace leveldb
